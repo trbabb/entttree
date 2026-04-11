@@ -256,9 +256,14 @@ private:
 
 
     void _dirty_ancestors(entt::entity eid) {
-        for (auto g = _transforms.hierarchy().ancestors(eid); g; ++g) {
-            auto [_, was_inserted] = _dirty.insert(g->node_id);
+        // dirty this node and all ancestors up to the root.
+        // ancestors() requires a ParentConnection, but root nodes don't have one,
+        // so we walk manually via parent_of().
+        entt::entity cur = eid;
+        while (cur != entt::null) {
+            auto [_, was_inserted] = _dirty.insert(cur);
             if (not was_inserted) break;  // already dirty above here
+            cur = _transforms.hierarchy().parent_of(cur);
         }
     }
 

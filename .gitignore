@@ -4,3 +4,5 @@ build/
 *.o
 test/test_hierarchy
 compile_commands.json
+.cache/
+notes.txt
