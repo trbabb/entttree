@@ -16,7 +16,7 @@
 
 using namespace geom;
 
-namespace theta {
+namespace entttree {
 
 template <typename K, typename V, typename Hasher=std::hash<K>, typename KeyEqual=std::equal_to<K>>
 using DenseMap = ankerl::unordered_dense::map<K,V,Hasher,KeyEqual>;
@@ -70,4 +70,4 @@ std::optional<V> remove_item(DenseMap<K,V>& m, const K& k) {
     return std::nullopt;
 }
 
-} // namespace theta
+} // namespace entttree

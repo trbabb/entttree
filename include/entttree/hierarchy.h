@@ -3,11 +3,11 @@
 #include <algorithm>
 #include <cassert>
 
-#include <theta-hierarchy/hierarchy_types.h>
-#include <theta-hierarchy/signal.h>
-#include <theta-hierarchy/traverse.h>
+#include <entttree/hierarchy_types.h>
+#include <entttree/signal.h>
+#include <entttree/traverse.h>
 
-namespace theta {
+namespace entttree {
 
 
 /**
@@ -352,7 +352,7 @@ struct HierarchySystem {
             SiblingTraversalOrder sibling_order = SiblingTraversalOrder::Forward,
             RecursionOrder recursion_order = RecursionOrder::ShallowFirst) const
     {
-        return theta::traverse_dfs(
+        return entttree::traverse_dfs(
             this->traverse(root, sibling_order),
             recursion_order
         );
@@ -454,4 +454,4 @@ private:
 };
 
 
-} // namespace theta
+} // namespace entttree

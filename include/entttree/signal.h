@@ -3,7 +3,7 @@
 #include <functional>
 #include <vector>
 
-namespace theta {
+namespace entttree {
 
 /**
  * @brief A simple typed signal that supports arbitrary callables.
@@ -54,4 +54,4 @@ private:
 };
 
 
-} // namespace theta
+} // namespace entttree

@@ -4,7 +4,7 @@
 #include <optional>
 #include <variant>
 
-namespace theta {
+namespace entttree {
 
 template <typename T, typename V=void>
 struct Generator {
@@ -193,4 +193,4 @@ struct FixedItemGenerator {
 };
 
 
-}  // namespace theta
+}  // namespace entttree

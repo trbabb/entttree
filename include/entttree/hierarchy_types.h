@@ -3,11 +3,11 @@
 #include <geomc/linalg/AffineTransform.h>
 #include <geomc/Hash.h>
 
-#include <theta-hierarchy/defs.h>
-#include <theta-hierarchy/position.h>
-#include <theta-hierarchy/traverse.h>
+#include <entttree/defs.h>
+#include <entttree/position.h>
+#include <entttree/traverse.h>
 
-namespace theta {
+namespace entttree {
 
 
 /****************************
@@ -113,4 +113,4 @@ struct RaySearchNode : public BoundedNode<Node,T,N> {
 };
 
 
-} // namespace theta
+} // namespace entttree

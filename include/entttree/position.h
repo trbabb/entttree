@@ -1,8 +1,8 @@
 #pragma once
 
-#include <theta-hierarchy/defs.h>
+#include <entttree/defs.h>
 
-namespace theta {
+namespace entttree {
 
 /**
  * @brief A fractional index with strong ordering.
@@ -65,13 +65,13 @@ public:
     Position after()  const;
 };
 
-} // namespace theta
+} // namespace entttree
 
 
 template <typename H>
-struct geom::Digest<theta::Position,H> {
-    H operator()(const theta::Position& pos) const {
-        using symbol_t = theta::Position::symbol_t;
+struct geom::Digest<entttree::Position,H> {
+    H operator()(const entttree::Position& pos) const {
+        using symbol_t = entttree::Position::symbol_t;
         H nonce = geom::truncated_constant<H>(0x249707f545e427faULL, 0x5905299ebf487d2b);
         return geom::hash_bytes<H>(
             nonce,
@@ -83,6 +83,6 @@ struct geom::Digest<theta::Position,H> {
 
 
 template <>
-struct std::hash<theta::Position> {
-    size_t operator()(const theta::Position& pos) const;
+struct std::hash<entttree::Position> {
+    size_t operator()(const entttree::Position& pos) const;
 };

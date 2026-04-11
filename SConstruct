@@ -33,7 +33,7 @@ lib_obj  = env.Object(
      for s in Glob('src/*.cpp')],
     Glob('src/*.cpp')
 )
-lib = env.StaticLibrary(f'{build_dir}/libtheta-hierarchy', lib_obj)
+lib = env.StaticLibrary(f'{build_dir}/libentttree', lib_obj)
 
 test_obj = env.Object(f'{build_dir}/test/test_hierarchy.o', 'test/test_hierarchy.cpp')
 test_prog = env.Program(

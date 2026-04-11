@@ -2,9 +2,9 @@
 #include <iostream>
 #include <vector>
 
-#include <theta-hierarchy/bounding_hierarchy.h>
+#include <entttree/bounding_hierarchy.h>
 
-using namespace theta;
+using namespace entttree;
 
 // hierarchy tags
 struct SceneH {};

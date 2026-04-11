@@ -3,10 +3,10 @@
 #include <list>
 #include <type_traits>
 
-#include <theta-hierarchy/defs.h>
-#include <theta-hierarchy/generator.h>
+#include <entttree/defs.h>
+#include <entttree/generator.h>
 
-namespace theta {
+namespace entttree {
 
 /*****************************
  * traversal class + concept *
@@ -314,4 +314,4 @@ Generator<Node> traverse_dfs(
 }
 
 
-}  // namespace theta
+}  // namespace entttree

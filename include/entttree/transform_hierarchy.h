@@ -1,8 +1,8 @@
 #pragma once
 
-#include <theta-hierarchy/hierarchy.h>
+#include <entttree/hierarchy.h>
 
-namespace theta {
+namespace entttree {
 
 
 /**
@@ -178,4 +178,4 @@ template <typename HTag>
 using TransformSystem3d = TransformSystem<HTag, double, 3>;
 
 
-} // namespace theta
+} // namespace entttree

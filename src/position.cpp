@@ -1,9 +1,9 @@
 #include <algorithm>
 #include <compare>
 
-#include <theta-hierarchy/position.h>
+#include <entttree/position.h>
 
-namespace theta {
+namespace entttree {
 
 //////// private helpers ////////
 
@@ -205,9 +205,9 @@ Position Position::between(const Position& other) const {
     return result;
 }
 
-} // namespace theta
+} // namespace entttree
 
 
-size_t std::hash<theta::Position>::operator()(const theta::Position& pos) const {
-    return geom::hash<theta::Position,size_t>(pos);
+size_t std::hash<entttree::Position>::operator()(const entttree::Position& pos) const {
+    return geom::hash<entttree::Position,size_t>(pos);
 }

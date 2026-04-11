@@ -2,9 +2,9 @@
 
 #include <geomc/shape/Transformed.h>
 
-#include <theta-hierarchy/transform_hierarchy.h>
+#include <entttree/transform_hierarchy.h>
 
-namespace theta {
+namespace entttree {
 
 
 /**
@@ -142,7 +142,7 @@ struct BoundsSystem {
     template <TransformedTraversal<T,N> Traversal>
     auto augment_with_bounds(Traversal&& t) {
         using Node = typename Traversal::Node::InnerNode;
-        return theta::transform(
+        return entttree::transform(
             std::forward<Traversal>(t),
             [this] (TransformedNode<Node,T,N>& n) -> BoundedNode<Node,T,N> {
                 entt::entity eid = n.node.node_id;
@@ -166,8 +166,8 @@ struct BoundsSystem {
     template <BoundedTraversal<T,N> Traversal>
     auto traverse_under_point(Traversal&& t, vecn p) {
         using InnerNode = typename Traversal::Node::InnerNode;
-        return theta::filter(
-            theta::transform(
+        return entttree::filter(
+            entttree::transform(
                 std::forward<Traversal>(t),
                 [p](BoundedNode<InnerNode,T,N>& n) -> PointSearchNode<InnerNode,T,N> {
                     return {n, p / n.node_to_root};
@@ -187,7 +187,7 @@ struct BoundsSystem {
             RecursionOrder recursion_order,
             vecn p)
     {
-        auto g = theta::traverse_dfs(
+        auto g = entttree::traverse_dfs(
             traverse_under_point(traverse(root, sibling_order), p),
             recursion_order
         );
@@ -203,8 +203,8 @@ struct BoundsSystem {
     template <BoundedTraversal<T,N> Traversal>
     auto traverse_along_ray(Traversal&& t, rayn ray) {
         using InnerNode = typename Traversal::Node::InnerNode;
-        return theta::filter(
-            theta::transform(
+        return entttree::filter(
+            entttree::transform(
                 std::forward<Traversal>(t),
                 [ray](BoundedNode<InnerNode,T,N>& n) -> RaySearchNode<InnerNode,T,N> {
                     rayn local_ray = ray / n.node_to_root;
@@ -229,7 +229,7 @@ struct BoundsSystem {
             RecursionOrder recursion_order,
             rayn ray)
     {
-        auto g = theta::traverse_dfs(
+        auto g = entttree::traverse_dfs(
             traverse_along_ray(traverse(root, sibling_order), ray),
             recursion_order
         );
@@ -352,4 +352,4 @@ template <typename HTag>
 using BoundsSystem3d = BoundsSystem<HTag, double, 3>;
 
 
-} // namespace theta
+} // namespace entttree
