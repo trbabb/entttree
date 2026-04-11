@@ -1,0 +1,6 @@
+build/
+.sconsign.dblite
+*.a
+*.o
+test/test_hierarchy
+compile_commands.json
