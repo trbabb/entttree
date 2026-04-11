@@ -491,7 +491,7 @@ void test_bounds_dirty_after_add_child() {
     assert(rb->hi[0] == 200 && rb->hi[1] == 200);
 
     assert_parent_contains_child(bs, xf, root, child);
-
+    
     std::cout << "ok\n";
 }
 
