@@ -351,6 +351,73 @@ void test_default_template_params() {
 }
 
 
+void test_add_helpers_default_path() {
+    std::cout << "test_add_helpers_default_path... ";
+
+    using R2 = Rect<double,2>;
+    using V2 = Vec<double,2>;
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    auto xf = add_transforms(reg, h);
+    auto bs = add_bounds(reg, xf);
+
+    auto root  = reg.create();
+    auto child = reg.create();
+    h.set_parent(child, root);
+
+    bs.set_intrinsic_bounds(child, R2{V2{0,0}, V2{1,1}});
+    auto rb = bs.get_computed_bounds(root);
+    assert(rb.has_value());
+    assert(std::abs(rb->lo[0] - 0.0) < 1e-10);
+    assert(std::abs(rb->hi[0] - 1.0) < 1e-10);
+
+    std::cout << "ok\n";
+}
+
+
+void test_add_helpers_layered_path() {
+    std::cout << "test_add_helpers_layered_path... ";
+
+    using R2 = Rect<double,2>;
+    using V2 = Vec<double,2>;
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    auto render_xf  = add_transforms<RenderXf>(reg, h);
+    auto physics_xf = add_transforms<PhysicsXf>(reg, h);
+    auto render_bs    = add_bounds<RenderBounds>(reg, render_xf);
+    auto collision_bs = add_bounds<CollisionBounds>(reg, physics_xf);
+
+    auto root  = reg.create();
+    auto child = reg.create();
+    h.set_parent(child, root);
+
+    render_bs.set_intrinsic_bounds(child, R2{V2{0,0}, V2{1,1}});
+    collision_bs.set_intrinsic_bounds(child, R2{V2{0,0}, V2{1,1}});
+
+    // baseline (no transform on either layer)
+    auto rb = render_bs.get_computed_bounds(root);
+    auto cb = collision_bs.get_computed_bounds(root);
+    assert(rb.has_value() && cb.has_value());
+    assert(std::abs(rb->lo[0] - 0.0) < 1e-10);
+    assert(std::abs(cb->lo[0] - 0.0) < 1e-10);
+
+    render_xf.set_transform(child, translation(V2{10.0, 0.0}));
+    physics_xf.set_transform(child, translation(V2{100.0, 0.0}));
+
+    rb = render_bs.get_computed_bounds(root);
+    cb = collision_bs.get_computed_bounds(root);
+    assert(rb.has_value() && cb.has_value());
+    assert(std::abs(rb->lo[0] - 10.0) < 1e-10);
+    assert(std::abs(rb->hi[0] - 11.0) < 1e-10);
+    assert(std::abs(cb->lo[0] - 100.0) < 1e-10);
+    assert(std::abs(cb->hi[0] - 101.0) < 1e-10);
+
+    std::cout << "ok\n";
+}
+
+
 void test_multiple_transform_layers_on_one_hierarchy() {
     std::cout << "test_multiple_transform_layers_on_one_hierarchy... ";
 
@@ -1071,6 +1138,8 @@ int main() {
     test_dca_and_path();
     test_multiple_hierarchies();
     test_default_template_params();
+    test_add_helpers_default_path();
+    test_add_helpers_layered_path();
     test_multiple_transform_layers_on_one_hierarchy();
     test_multiple_bounds_layers_on_one_hierarchy();
     test_separate_hierarchies_are_independent_with_layers();

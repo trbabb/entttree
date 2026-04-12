@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <type_traits>
+
 #include <entttree/hierarchy.h>
 
 namespace entttree {
@@ -210,6 +212,30 @@ private:
     HierarchySystem<HTag>& _hierarchy;
 
 };
+
+
+/**
+ * @brief Construct a TransformSystem with deduced hierarchy tag and optional overrides.
+ *
+ * Easy path:
+ * `auto xf = add_transforms(reg, hierarchy);`
+ *
+ * Layered path:
+ * `auto xf = add_transforms<RenderXf>(reg, hierarchy);`
+ *
+ * Fully specified:
+ * `auto xf = add_transforms<RenderXf, float, 3>(reg, hierarchy);`
+ *
+ * @tparam XTag Transform-layer tag. Defaults to the hierarchy tag when omitted.
+ * @tparam T    Scalar type. Defaults to `double`.
+ * @tparam N    Spatial dimension. Defaults to `2`.
+ * @tparam HTag Hierarchy tag (deduced from `hierarchy`).
+ */
+template <typename XTag=void, typename T=double, size_t N=2, typename HTag>
+auto add_transforms(entt::registry& reg, HierarchySystem<HTag>& hierarchy) {
+    using LayerTag = std::conditional_t<std::is_void_v<XTag>, HTag, XTag>;
+    return TransformSystem<HTag,T,N,LayerTag>(reg, hierarchy);
+}
 
 
 template <typename HTag, typename XTag=HTag>

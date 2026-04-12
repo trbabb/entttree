@@ -53,7 +53,7 @@ entt::sink{h.on_changed}.connect<[] (entt::entity child, ParentConnection<Render
 Layers affine transforms on a hierarchy. Nodes without an explicit transform use the identity.
 
 ```cpp
-entttree::TransformSystem<RenderH> xf(reg, h);  // defaults: double, 2D, layer tag = RenderH
+auto xf = entttree::add_transforms(reg, h);  // defaults: double, 2D, layer tag = RenderH
 
 xf.set_transform(child, AffineTransform<double,2>::translation({5, 0}));
 
@@ -67,8 +67,9 @@ To maintain multiple transform overlays on one hierarchy:
 struct RenderXf {};
 struct PhysicsXf {};
 
-entttree::TransformSystem<RenderH, double, 2, RenderXf>  render_xf(reg, h);
-entttree::TransformSystem<RenderH, double, 2, PhysicsXf> physics_xf(reg, h);
+// create two separate TransformSystems on the same hierarchy
+auto render_xf  = entttree::add_transforms<RenderXf>(reg, h);
+auto physics_xf = entttree::add_transforms<PhysicsXf>(reg, h);
 ```
 
 ### BoundsSystem
@@ -76,7 +77,7 @@ entttree::TransformSystem<RenderH, double, 2, PhysicsXf> physics_xf(reg, h);
 Maintains hierarchical bounding boxes. Computed bounds are the union of a node's intrinsic bounds and its children's bounds (in parent space). Listens to hierarchy and transform signals for automatic dirty propagation.
 
 ```cpp
-entttree::BoundsSystem<RenderH> bs(reg, xf);  // defaults: double, 2D, bounds layer = RenderH
+auto bs = entttree::add_bounds(reg, xf);  // defaults: bounds layer = hierarchy tag
 
 bs.set_intrinsic_bounds(entity, Rect<double,2>{{0,0}, {10,10}});
 
@@ -95,9 +96,19 @@ struct RenderBounds {};
 struct CollisionBounds {};
 struct HitboxBounds {};
 
-entttree::BoundsSystem<RenderH, double, 2, RenderBounds>    render_bounds(reg, xf);
-entttree::BoundsSystem<RenderH, double, 2, CollisionBounds> collision_bounds(reg, xf);
-entttree::BoundsSystem<RenderH, double, 2, HitboxBounds>    hitbox_bounds(reg, xf);
+auto render_bounds    = entttree::add_bounds<RenderBounds>(reg, xf);
+auto collision_bounds = entttree::add_bounds<CollisionBounds>(reg, xf);
+auto hitbox_bounds    = entttree::add_bounds<HitboxBounds>(reg, xf);
+```
+
+To mix multiple bounds layers with multiple transform layers on one hierarchy:
+
+```cpp
+auto render_xf  = entttree::add_transforms<RenderXf>(reg, h);
+auto physics_xf = entttree::add_transforms<PhysicsXf>(reg, h);
+
+auto render_bounds    = entttree::add_bounds<RenderBounds>(reg, render_xf);
+auto collision_bounds = entttree::add_bounds<CollisionBounds>(reg, physics_xf);
 ```
 
 ## Traversal framework

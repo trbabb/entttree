@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <type_traits>
+
 #include <geomc/shape/Transformed.h>
 
 #include <entttree/transform_hierarchy.h>
@@ -445,6 +447,31 @@ private:
     }
 
 };
+
+
+/**
+ * @brief Construct a BoundsSystem with deduced types from a TransformSystem.
+ *
+ * Easy path:
+ * `auto bs = add_bounds(reg, transforms);`
+ *
+ * Layered path:
+ * `auto bs = add_bounds<RenderBounds>(reg, transforms);`
+ *
+ * @tparam BTag Bounds-layer tag. Defaults to the hierarchy tag when omitted.
+ * @tparam HTag Hierarchy tag (deduced from `transforms`).
+ * @tparam T    Scalar type (deduced from `transforms`).
+ * @tparam N    Spatial dimension (deduced from `transforms`).
+ * @tparam XTag Transform-layer tag observed by this bounds system (deduced).
+ */
+template <typename BTag=void, typename HTag, typename T, size_t N, typename XTag>
+auto add_bounds(
+        entt::registry& reg,
+        TransformSystem<HTag,T,N,XTag>& transforms)
+{
+    using LayerTag = std::conditional_t<std::is_void_v<BTag>, HTag, BTag>;
+    return BoundsSystem<HTag,T,N,LayerTag,XTag>(reg, transforms);
+}
 
 
 template <typename HTag, typename BTag=HTag, typename XTag=HTag>
