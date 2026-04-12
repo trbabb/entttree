@@ -1,6 +1,6 @@
 # entttree
 
-A C++20 library for hierarchical entity management built on [EnTT](https://github.com/skypjack/entt). Provides type-tagged parent-child hierarchies, affine transform propagation, and hierarchical bounding volumes with automatic dirty tracking.
+A C++20 library for hierarchical entity management built on [EnTT](https://github.com/skypjack/entt). Provides type-tagged parent-child hierarchies, affine transform propagation, and hierarchical bounding volumes with lazy bound recomputation.
 
 Multiple independent hierarchies can coexist on the same entities using compile-time tag types:
 
@@ -30,7 +30,7 @@ h.set_parent(child, root, position);      // ...at a specific position
 h.order_child_before(child_a, child_b);   // reorder siblings
 
 // traversal
-for (auto g = entttree::walk::dfs(h.traverse(root, SiblingTraversalOrder::Forward)); g; ++g) {
+for (auto g = entttree::walk::dfs(h.traverse(root, SiblingOrder::Forward)); g; ++g) {
     // visit nodes depth-first
 }
 
@@ -75,7 +75,7 @@ for (auto g = bs.search_under_point(root, fwd, shallow_first, point); g; ++g) {
 Traversals are lazy, coroutine-based generators that can be composed:
 
 ```cpp
-auto t = h.traverse(root, SiblingTraversalOrder::Forward);
+auto t = h.traverse(root, SiblingOrder::Forward);
 
 // filter nodes out of the graph entirely
 auto visible = entttree::walk::exclude_if(t, [](const auto& node) {
@@ -90,18 +90,18 @@ auto in_frustum = entttree::walk::prune_if(visible, [](const auto& node) {
 // choose a walker + visit order
 for (auto g = entttree::walk::dfs(
          in_frustum,
-         RecursionOrder::ShallowFirst); g; ++g) {
+         DfsOrder::ShallowFirst); g; ++g) {
     // ...
 }
 
 // compile-time options are available too
 for (auto g = entttree::walk::dfs<
-         RecursionOrder::DeepFirst>(in_frustum); g; ++g) {
+         DfsOrder::DeepFirst>(in_frustum); g; ++g) {
     // ...
 }
 
 // sibling order is controlled by the traversal source
-auto backward = h.traverse(root, SiblingTraversalOrder::Backward);
+auto backward = h.traverse(root, SiblingOrder::Backward);
 for (auto g = entttree::walk::dfs(backward); g; ++g) {
     // ...
 }
@@ -123,7 +123,7 @@ Traversal nodes are intentionally stored and queued by value. To avoid expensive
 // good: cheap handle traversal
 auto t = entttree::make_traversal(
     root_entity,
-    [&h] (entt::entity& e) { return h.children(e, SiblingTraversalOrder::Forward); }
+    [&h] (entt::entity& e) { return h.children(e, SiblingOrder::Forward); }
 );
 
 // augment without copying components
@@ -147,7 +147,7 @@ in ways that invalidate those references while the generator is active.
 
 `walk::reverse_successors(...)` buffers each expanded node's child list in a temporary
 vector. If your source can already enumerate children in reverse cheaply (like
-`HierarchySystem::children(..., SiblingTraversalOrder::Backward)`), prefer that.
+`HierarchySystem::children(..., SiblingOrder::Backward)`), prefer that.
 
 ## Dependencies
 
