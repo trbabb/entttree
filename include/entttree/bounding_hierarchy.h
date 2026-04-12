@@ -46,11 +46,11 @@ struct BoundsSystem {
      ****************************/
 
     /// Emitted when intrinsic bounds are first set on an entity. Args: (entity, new_bounds).
-    Signal<entt::entity, rangen>           on_bounds_set;
+    entt::sigh<void(entt::entity, rangen)>           on_bounds_set;
     /// Emitted when intrinsic bounds are removed from an entity. Args: (entity, old_bounds).
-    Signal<entt::entity, rangen>           on_bounds_removed;
+    entt::sigh<void(entt::entity, rangen)>           on_bounds_removed;
     /// Emitted when an existing intrinsic bounds value changes. Args: (entity, old_bounds, new_bounds).
-    Signal<entt::entity, rangen, rangen>   on_bounds_changed;
+    entt::sigh<void(entt::entity, rangen, rangen)>   on_bounds_changed;
 
     /****************************
      * Construction
@@ -63,23 +63,16 @@ struct BoundsSystem {
         _transforms(transforms)
     {
         // listen for hierarchy changes to dirty bounds
-        _conn_added = _transforms.hierarchy().on_added
+        _conn_added = entt::sink{_transforms.hierarchy().on_added}
             .template connect<&BoundsSystem::_on_child_added>(*this);
-        _conn_removed = _transforms.hierarchy().on_removed
+        _conn_removed = entt::sink{_transforms.hierarchy().on_removed}
             .template connect<&BoundsSystem::_on_child_removed>(*this);
-        _conn_changed = _transforms.hierarchy().on_changed
+        _conn_changed = entt::sink{_transforms.hierarchy().on_changed}
             .template connect<&BoundsSystem::_on_reparent>(*this);
 
         // listen for transform changes to dirty bounds
-        _conn_xf = _transforms.on_transform_changed
+        _conn_xf = entt::sink{_transforms.on_transform_changed}
             .template connect<&BoundsSystem::_on_transform_changed>(*this);
-    }
-
-    ~BoundsSystem() {
-        _transforms.hierarchy().on_added.disconnect(_conn_added);
-        _transforms.hierarchy().on_removed.disconnect(_conn_removed);
-        _transforms.hierarchy().on_changed.disconnect(_conn_changed);
-        _transforms.on_transform_changed.disconnect(_conn_xf);
     }
 
     BoundsSystem(const BoundsSystem&) = delete;
@@ -332,11 +325,11 @@ private:
     DenseSet<entt::entity> _dirty;
     DenseMap<entt::entity, rangen> _computed;
 
-    // signal connection IDs for cleanup
-    size_t _conn_added;
-    size_t _conn_removed;
-    size_t _conn_changed;
-    size_t _conn_xf;
+    // scoped signal connections (auto-disconnect on destruction)
+    entt::scoped_connection _conn_added;
+    entt::scoped_connection _conn_removed;
+    entt::scoped_connection _conn_changed;
+    entt::scoped_connection _conn_xf;
 
 
     void _dirty_ancestors(entt::entity eid) {

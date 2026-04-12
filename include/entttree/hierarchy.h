@@ -9,7 +9,6 @@
 #include <cassert>
 
 #include <entttree/hierarchy_types.h>
-#include <entttree/signal.h>
 #include <entttree/traverse.h>
 
 namespace entttree {
@@ -44,11 +43,11 @@ struct HierarchySystem {
      ****************************/
 
     /// Emitted after a child is added to the hierarchy. Args: (child, new_connection).
-    Signal<entt::entity, PC>     on_added;
+    entt::sigh<void(entt::entity, PC)>     on_added;
     /// Emitted after a child is removed from the hierarchy. Args: (child, old_connection).
-    Signal<entt::entity, PC>     on_removed;
+    entt::sigh<void(entt::entity, PC)>     on_removed;
     /// Emitted after a child's parent or position changes. Args: (child, old_connection, new_connection).
-    Signal<entt::entity, PC, PC> on_changed;
+    entt::sigh<void(entt::entity, PC, PC)> on_changed;
 
     /****************************
      * Construction

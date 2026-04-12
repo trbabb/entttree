@@ -35,9 +35,9 @@ for (auto g = entttree::walk::dfs(h.traverse(root, SiblingOrder::Forward)); g; +
 }
 
 // signals
-h.on_added.connect([](entt::entity child, auto& connection) { ... });
-h.on_removed.connect([](entt::entity child, auto& old_connection) { ... });
-h.on_changed.connect([](entt::entity child, auto& old_val, auto& new_val) { ... });
+entt::sink{h.on_added}.connect<[] (entt::entity child, ParentConnection<RenderH> connection) { ... }>();
+entt::sink{h.on_removed}.connect<[] (entt::entity child, ParentConnection<RenderH> old_connection) { ... }>();
+entt::sink{h.on_changed}.connect<[] (entt::entity child, ParentConnection<RenderH> old_val, ParentConnection<RenderH> new_val) { ... }>();
 ```
 
 ### TransformSystem

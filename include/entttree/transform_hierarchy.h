@@ -34,11 +34,11 @@ struct TransformSystem {
      ****************************/
 
     /// Emitted when a transform is first set on an entity. Args: (entity, new_xf).
-    Signal<entt::entity, xfn>            on_transform_set;
+    entt::sigh<void(entt::entity, xfn)>            on_transform_set;
     /// Emitted when a transform is removed from an entity. Args: (entity, old_xf).
-    Signal<entt::entity, xfn>            on_transform_removed;
+    entt::sigh<void(entt::entity, xfn)>            on_transform_removed;
     /// Emitted when an existing transform changes. Args: (entity, old_xf, new_xf).
-    Signal<entt::entity, xfn, xfn>       on_transform_changed;
+    entt::sigh<void(entt::entity, xfn, xfn)>       on_transform_changed;
 
     /****************************
      * Construction

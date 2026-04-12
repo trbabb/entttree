@@ -125,32 +125,36 @@ void test_signals() {
     entt::registry reg;
     HierarchySystem<SceneH> h(reg);
 
-    int added_count = 0;
-    int changed_count = 0;
-    int removed_count = 0;
+    struct Counters {
+        int added = 0;
+        int changed = 0;
+        int removed = 0;
+    };
+    Counters counters;
+    using PC = ParentConnection<SceneH>;
 
-    h.on_added.connect([&](entt::entity, ParentConnection<SceneH>) {
-        ++added_count;
-    });
-    h.on_changed.connect([&](entt::entity, ParentConnection<SceneH>, ParentConnection<SceneH>) {
-        ++changed_count;
-    });
-    h.on_removed.connect([&](entt::entity, ParentConnection<SceneH>) {
-        ++removed_count;
-    });
+    entt::sink{h.on_added}.connect<[] (Counters& c, entt::entity, PC) {
+        ++c.added;
+    }>(counters);
+    entt::sink{h.on_changed}.connect<[] (Counters& c, entt::entity, PC, PC) {
+        ++c.changed;
+    }>(counters);
+    entt::sink{h.on_removed}.connect<[] (Counters& c, entt::entity, PC) {
+        ++c.removed;
+    }>(counters);
 
     auto root = reg.create();
     auto child = reg.create();
     auto other = reg.create();
 
     h.set_parent(child, root);
-    assert(added_count == 1);
+    assert(counters.added == 1);
 
     h.set_parent(child, other);  // reparent
-    assert(changed_count == 1);
+    assert(counters.changed == 1);
 
     h.unparent(child);
-    assert(removed_count == 1);
+    assert(counters.removed == 1);
 
     std::cout << "ok\n";
 }
