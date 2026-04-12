@@ -1,3 +1,8 @@
+/**
+ * @file hierarchy.h
+ * @brief Core hierarchy system managing parent-child relationships over EnTT entities.
+ */
+
 #pragma once
 
 #include <algorithm>
@@ -13,12 +18,21 @@ namespace entttree {
 /**
  * @brief A system for maintaining parent-child relationships on entities.
  *
- * Mutations go through this system's API, which maintains a sorted children
- * cache and emits typed signals. The source of truth is the
- * `ParentConnection<HTag>` component in the registry.
+ * The source of truth for a parent-child relationship is a
+ * ParentConnection<HTag> component which lives on the *child* entity. This
+ * component also contains a Position field which determines the relative order
+ * of siblings. A sorted cache is maintained which maps parents to their
+ * children; this is updated whenever a parent-child connection is changed.
+ * For this reason, it is invalid to edit the ParentConnection component
+ * outside of this system.
+ *
+ * Root nodes (those without parents) do not have a ParentConnection component.
  *
  * Multiple independent hierarchies can coexist on the same entity by using
- * different tag types.
+ * different tag types for `HTag`.
+ *
+ * @tparam HTag A tag type that distinguishes this hierarchy from others on
+ *              the same registry (e.g. `struct RenderH {};`).
  */
 template <typename HTag>
 struct HierarchySystem {
@@ -29,8 +43,11 @@ struct HierarchySystem {
      * Typed signals
      ****************************/
 
+    /// Emitted after a child is added to the hierarchy. Args: (child, new_connection).
     Signal<entt::entity, PC>     on_added;
+    /// Emitted after a child is removed from the hierarchy. Args: (child, old_connection).
     Signal<entt::entity, PC>     on_removed;
+    /// Emitted after a child's parent or position changes. Args: (child, old_connection, new_connection).
     Signal<entt::entity, PC, PC> on_changed;
 
     /****************************
@@ -260,35 +277,45 @@ struct HierarchySystem {
      * Queries
      ****************************/
 
+    /// The number of non-root nodes in the hierarchy (i.e. entities with a parent).
     size_t size() const {
         return _reg.template storage<PC>()
             ? _reg.template storage<PC>()->size()
             : 0;
     }
 
+    /// Returns the parent of `node`, or `entt::null` if the node is a root or not in the hierarchy.
     entt::entity parent_of(entt::entity node) const {
         auto* pc = _reg.try_get<PC>(node);
         return pc ? pc->parent : entt::null;
     }
 
+    /// Returns the sibling position of `node`, or `std::nullopt` if not in the hierarchy.
     std::optional<Position> position_of(entt::entity node) const {
         auto* pc = _reg.try_get<PC>(node);
         if (pc) return pc->position;
         return std::nullopt;
     }
 
+    /// Returns the full ParentConnection for `node`, or `std::nullopt` if not in the hierarchy.
     std::optional<PC> get_connection(entt::entity node) const {
         auto* pc = _reg.try_get<PC>(node);
         if (pc) return *pc;
         return std::nullopt;
     }
 
+    /**
+     * @brief Returns the number of children of a given node.
+     *
+     * If the node is not in the hierarchy, the count is implicitly zero.
+     */
     size_t child_count(entt::entity parent) const {
         auto it = _children.find(parent);
         if (it == _children.end()) return 0;
         return it->second.size();
     }
 
+    /// Returns the position of the last child, or `std::nullopt` if there are no children.
     std::optional<Position> last_child_position(entt::entity parent) const {
         auto it = _children.find(parent);
         if (it == _children.end()) return std::nullopt;
@@ -302,6 +329,13 @@ struct HierarchySystem {
      * Traversal generators
      ****************************/
 
+    /**
+     * @brief Visit each child of a given node.
+     *
+     * It is valid to remove (but not add) children during iteration when
+     * the sibling order is backward. Otherwise, changes to the hierarchy
+     * will invalidate the iterator.
+     */
     Generator<NodeEntry> children(
             entt::entity parent,
             SiblingOrder order) const
@@ -321,6 +355,15 @@ struct HierarchySystem {
     }
 
 
+    /**
+     * @brief Returns a generator which yields the ancestors of a given node.
+     *
+     * The first element yielded is the node itself (unless it has no
+     * ParentConnection), and the last element is the root. Each yielded
+     * NodeEntry has `node_id` set to the current ancestor and `parent_id`
+     * set to the next ancestor up the hierarchy. When the root is yielded
+     * its `parent_id` will be `entt::null`.
+     */
     Generator<NodeEntry> ancestors(entt::entity node) const {
         entt::entity cur = node;
         while (cur != entt::null) {
@@ -332,6 +375,12 @@ struct HierarchySystem {
     }
 
 
+    /**
+     * @brief Returns a Traversal of the hierarchy rooted at `root`.
+     *
+     * The returned Traversal can be composed with adaptors from the
+     * `walk` namespace and then flattened with `walk::dfs()` or `walk::bfs()`.
+     */
     auto traverse(entt::entity root, SiblingOrder order) const {
         NodeEntry root_entry {
             root,
@@ -346,6 +395,7 @@ struct HierarchySystem {
         );
     }
 
+    /// Convenience: flatten a depth-first traversal into a generator.
     Generator<NodeEntry> traverse_dfs(
             entt::entity root,
             SiblingOrder sibling_order = SiblingOrder::Forward,
@@ -357,6 +407,12 @@ struct HierarchySystem {
         );
     }
 
+    /**
+     * @brief Returns the path from the root to the given node.
+     *
+     * The first element of the path is the root, and the last element
+     * is the node itself.
+     */
     TreePath path(entt::entity node) const {
         TreePath p;
         p.push_back(node);
@@ -370,6 +426,11 @@ struct HierarchySystem {
     }
 
 
+    /**
+     * @brief Returns the deepest common ancestor of two nodes.
+     * @return The common ancestor entity, or `entt::null` if the nodes are
+     *         not in the same tree.
+     */
     entt::entity deepest_common_ancestor(
             entt::entity node_a,
             entt::entity node_b) const
@@ -389,6 +450,7 @@ struct HierarchySystem {
     }
 
 
+    /// Returns `true` if `ancestor` is a strict ancestor of `descendant`.
     bool is_ancestor_of(entt::entity ancestor, entt::entity descendant) const {
         auto* pc = _reg.try_get<PC>(descendant);
         while (pc and pc->parent != entt::null) {

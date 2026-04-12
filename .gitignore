@@ -6,4 +6,5 @@ build/
 test/test_hierarchy
 compile_commands.json
 .cache/
+docs/
 notes.txt

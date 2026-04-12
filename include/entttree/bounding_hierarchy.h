@@ -1,3 +1,8 @@
+/**
+ * @file bounding_hierarchy.h
+ * @brief Hierarchical bounding volume system with lazy recomputation.
+ */
+
 #pragma once
 
 #include <geomc/shape/Transformed.h>
@@ -10,11 +15,22 @@ namespace entttree {
 /**
  * @brief A system for maintaining hierarchical bounding boxes.
  *
- * Computed bounds for each entity are the union of its intrinsic bounds and the
- * computed bounds of its children (transformed into parent space). Dirty tracking
- * defers recomputation until the bounds are actually queried.
+ * It produces a computed bound for each entity, which is the union of its
+ * intrinsic bound and the computed bounds of its children (transformed into
+ * parent space). Dirty tracking defers recomputation until the bounds are
+ * actually queried, making bulk hierarchy or transform changes inexpensive.
  *
- * Listens to hierarchy and transform signals for automatic dirty propagation.
+ * This system connects to a TransformSystem (and through it, a HierarchySystem)
+ * via signals. When parent-child relationships change or transforms are
+ * modified, the affected bounds are automatically marked dirty up to the root.
+ *
+ * The BoundsSystem does not own the TransformSystem; it holds a reference
+ * to it. Multiple BoundsSystem instances may share the same TransformSystem
+ * if needed.
+ *
+ * @tparam HTag Hierarchy tag type.
+ * @tparam T    Scalar type (e.g. `double`).
+ * @tparam N    Spatial dimension (e.g. 2 or 3).
  */
 template <typename HTag, typename T, size_t N>
 struct BoundsSystem {
@@ -29,8 +45,11 @@ struct BoundsSystem {
      * Typed signals
      ****************************/
 
+    /// Emitted when intrinsic bounds are first set on an entity. Args: (entity, new_bounds).
     Signal<entt::entity, rangen>           on_bounds_set;
+    /// Emitted when intrinsic bounds are removed from an entity. Args: (entity, old_bounds).
     Signal<entt::entity, rangen>           on_bounds_removed;
+    /// Emitted when an existing intrinsic bounds value changes. Args: (entity, old_bounds, new_bounds).
     Signal<entt::entity, rangen, rangen>   on_bounds_changed;
 
     /****************************
@@ -73,6 +92,10 @@ struct BoundsSystem {
      * Mutation API
      ****************************/
 
+    /**
+     * @brief Set the intrinsic (local) bounding box for an entity.
+     * @return The previous intrinsic bounds, or `std::nullopt` if the entity had none.
+     */
     std::optional<rangen> set_intrinsic_bounds(entt::entity eid, rangen bounds) {
         auto* old = _reg.try_get<IB>(eid);
         std::optional<rangen> old_val;
@@ -92,6 +115,7 @@ struct BoundsSystem {
     }
 
 
+    /// Get the intrinsic bounds in local coordinates, or `std::nullopt` if not set.
     std::optional<rangen> get_intrinsic_bounds(entt::entity eid) const {
         auto* ib = _reg.try_get<IB>(eid);
         if (ib) return ib->bounds;
@@ -99,6 +123,7 @@ struct BoundsSystem {
     }
 
 
+    /// Remove the intrinsic bounds for an entity. Returns the old bounds if they existed.
     std::optional<rangen> remove_intrinsic_bounds(entt::entity eid) {
         auto* ib = _reg.try_get<IB>(eid);
         if (not ib) return std::nullopt;
@@ -118,6 +143,16 @@ struct BoundsSystem {
     }
 
 
+    /**
+     * @brief Get the computed bounds for an entity in local coordinates.
+     *
+     * Computed bounds are the union of the entity's intrinsic bounds and the
+     * computed bounds of all its children (transformed into parent space).
+     * If the bounds are dirty, they are lazily recomputed before returning.
+     *
+     * @return The computed bounds, or `std::nullopt` if the entity has no
+     *         intrinsic bounds and no children with bounds.
+     */
     std::optional<rangen> get_computed_bounds(entt::entity eid) {
         if (_dirty.contains(eid)) {
             return _recompute(eid);
@@ -132,6 +167,7 @@ struct BoundsSystem {
      * Traversal
      ****************************/
 
+    /// Create a traversal which yields `BoundedNode<NodeEntry,T,N>`.
     auto traverse(entt::entity root, SiblingOrder order) {
         return augment_with_bounds(
             _transforms.traverse(root, order)
@@ -139,6 +175,13 @@ struct BoundsSystem {
     }
 
 
+    /**
+     * @brief Convert a traversal of `TransformedNode<Node,T,N>` to a traversal
+     * of `BoundedNode<Node,T,N>`.
+     *
+     * Each node is augmented with its intrinsic and computed bounds.
+     * Dirty bounds are recomputed on the fly.
+     */
     template <TransformedTraversal<T,N> Traversal>
     auto augment_with_bounds(Traversal&& t) {
         using Node = typename TraversalValue<Traversal>::Node::InnerNode;
@@ -163,6 +206,15 @@ struct BoundsSystem {
     }
 
 
+    /**
+     * @brief Filter a bounded traversal to only visit nodes whose computed bounds
+     * contain a point (or which have descendants that might).
+     *
+     * Transforms the traversal from `BoundedNode<Node,T,N>` to
+     * `PointSearchNode<Node,T,N>`, which includes the query point in each
+     * node's local coordinates for convenience. Nodes without computed bounds
+     * are traversed unconditionally.
+     */
     template <BoundedTraversal<T,N> Traversal>
     auto traverse_under_point(Traversal&& t, vecn p) {
         using InnerNode = typename TraversalValue<Traversal>::Node::InnerNode;
@@ -181,6 +233,18 @@ struct BoundsSystem {
     }
 
 
+    /**
+     * @brief Yield all nodes whose intrinsic bounds contain a point.
+     *
+     * This performs a depth-first traversal, pruning subtrees whose computed
+     * bounds do not contain the point, and then post-filters to only yield
+     * nodes whose *intrinsic* bounds contain the local point.
+     *
+     * @param root           Root of the subtree to search.
+     * @param sibling_order  Order in which siblings are visited.
+     * @param recursion_order Pre-order or post-order visitation.
+     * @param p              The query point in root-space coordinates.
+     */
     Generator<PointSearchNode<NodeEntry,T,N>> search_under_point(
             entt::entity root,
             SiblingOrder sibling_order,
@@ -200,6 +264,15 @@ struct BoundsSystem {
     }
 
 
+    /**
+     * @brief Filter a bounded traversal to only visit nodes whose computed bounds
+     * intersect a ray (or which have descendants that might).
+     *
+     * Transforms the traversal from `BoundedNode<Node,T,N>` to
+     * `RaySearchNode<Node,T,N>`, which includes the local ray and the
+     * parameter interval of the intersection. Nodes without computed bounds
+     * are traversed unconditionally.
+     */
     template <BoundedTraversal<T,N> Traversal>
     auto traverse_along_ray(Traversal&& t, rayn ray) {
         using InnerNode = typename TraversalValue<Traversal>::Node::InnerNode;
@@ -223,6 +296,17 @@ struct BoundsSystem {
     }
 
 
+    /**
+     * @brief Yield all nodes whose computed bounds intersect a ray.
+     *
+     * This performs a depth-first traversal, pruning subtrees whose computed
+     * bounds do not intersect the ray.
+     *
+     * @param root           Root of the subtree to search.
+     * @param sibling_order  Order in which siblings are visited.
+     * @param recursion_order Pre-order or post-order visitation.
+     * @param ray            The query ray in root-space coordinates.
+     */
     Generator<RaySearchNode<NodeEntry,T,N>> search_along_ray(
             entt::entity root,
             SiblingOrder sibling_order,

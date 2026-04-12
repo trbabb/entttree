@@ -1,3 +1,8 @@
+/**
+ * @file generator.h
+ * @brief Coroutine-based generator and related wrapper types.
+ */
+
 #pragma once
 
 #include <coroutine>
@@ -6,6 +11,25 @@
 
 namespace entttree {
 
+/**
+ * @brief A C++20 coroutine-based generator that lazily yields values of type `T`.
+ *
+ * A coroutine returning `Generator<T>` can use `co_yield` to produce values and
+ * `co_return` to finish. The consumer drives iteration with `operator++` and
+ * `operator bool`:
+ *
+ * @code
+ * Generator<int> range(int lo, int hi) {
+ *     for (int i = lo; i < hi; ++i) co_yield i;
+ * }
+ * for (auto g = range(0, 5); g; ++g) {
+ *     std::cout << *g << "\n";
+ * }
+ * @endcode
+ *
+ * @tparam T The type of value yielded by the generator.
+ * @tparam V Optional return-value type (defaults to void / `std::monostate`).
+ */
 template <typename T, typename V=void>
 struct Generator {
 
@@ -87,6 +111,7 @@ private:
 
 public:
 
+    /// Advance to the next yielded value. Returns `true` if a new value is available.
     bool next() {
         if (not _handle) return false;
         if (_maybe_finish()) return false;
@@ -96,25 +121,36 @@ public:
         return true;
     }
 
+    /// Advance to the next value (same as next()).
     Generator& operator++() {
         next();
         return *this;
     }
 
+    /// Access the most recently yielded value.
     const T& operator*() const { return _handle.promise().value(); }
+    /// @copydoc operator*() const
           T& operator*()       { return _handle.promise().value(); }
 
+    /// Access the most recently yielded value via pointer.
     const T* operator->() const { return &_handle.promise().value(); }
+    /// @copydoc operator->() const
           T* operator->()       { return &_handle.promise().value(); }
 
+    /// Returns `true` if the generator has more values to produce.
     bool is_valid() const { return _handle and not _handle.done(); }
+    /// @copydoc is_valid()
     operator bool() const { return is_valid(); }
 
+    /// The number of values yielded so far.
     size_t count() const { return _count; }
 
+    /// Returns `true` if the coroutine has finished (reached `co_return`).
     bool is_finished() const { return _ret.has_value(); }
 
+    /// Access the coroutine's return value (only valid after is_finished() is true).
     ret_t& get_return_value()             { return *_ret; }
+    /// @copydoc get_return_value()
     const ret_t& get_return_value() const { return *_ret; }
 
 private:
@@ -128,6 +164,15 @@ private:
 };
 
 
+/**
+ * @brief A wrapper around an optional Generator.
+ *
+ * If the inner generator is absent, MaybeGenerator behaves as an empty
+ * (immediately exhausted) generator. This is useful in traversal adaptors
+ * like prune_if(), where a node may or may not produce successors.
+ *
+ * @tparam G The generator type to wrap.
+ */
 template <typename G>
 struct MaybeGenerator {
     std::optional<G> generator = std::nullopt;
@@ -170,6 +215,14 @@ struct MaybeGenerator {
 };
 
 
+/**
+ * @brief A generator that yields exactly one item, then exhausts.
+ *
+ * Satisfies `GeneratorConcept` and is useful for creating leaf-node
+ * traversals with a single child.
+ *
+ * @tparam T The item type.
+ */
 template <typename T>
 struct FixedItemGenerator {
     T    item;

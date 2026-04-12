@@ -1,3 +1,8 @@
+/**
+ * @file transform_hierarchy.h
+ * @brief Transform system layered on top of a HierarchySystem.
+ */
+
 #pragma once
 
 #include <entttree/hierarchy.h>
@@ -6,10 +11,17 @@ namespace entttree {
 
 
 /**
- * @brief A system for maintaining local transforms layered on a hierarchy.
+ * @brief A system for maintaining local affine transforms layered on a hierarchy.
  *
- * Objects without an explicit transform are assumed to have the identity.
- * Emits typed signals for transform add/change/remove.
+ * Each entity may optionally have a LocalTransform component representing the
+ * transform from the entity's local space to its parent's space. Entities
+ * without an explicit transform are assumed to have the identity.
+ *
+ * Emits typed signals when transforms are set, changed, or removed.
+ *
+ * @tparam HTag Hierarchy tag type.
+ * @tparam T    Scalar type (e.g. `double`).
+ * @tparam N    Spatial dimension (e.g. 2 or 3).
  */
 template <typename HTag, typename T, size_t N>
 struct TransformSystem {
@@ -21,8 +33,11 @@ struct TransformSystem {
      * Typed signals
      ****************************/
 
+    /// Emitted when a transform is first set on an entity. Args: (entity, new_xf).
     Signal<entt::entity, xfn>            on_transform_set;
+    /// Emitted when a transform is removed from an entity. Args: (entity, old_xf).
     Signal<entt::entity, xfn>            on_transform_removed;
+    /// Emitted when an existing transform changes. Args: (entity, old_xf, new_xf).
     Signal<entt::entity, xfn, xfn>       on_transform_changed;
 
     /****************************
@@ -42,6 +57,7 @@ struct TransformSystem {
      * Mutation API
      ****************************/
 
+    /// Set the local (child-to-parent) transform for an entity.
     void set_transform(entt::entity eid, xfn xf) {
         auto* old = _reg.try_get<LT>(eid);
         if (old) {
@@ -56,12 +72,14 @@ struct TransformSystem {
         }
     }
 
+    /// Get the local transform for an entity, or `std::nullopt` if none is set.
     std::optional<xfn> get_transform(entt::entity eid) const {
         auto* lt = _reg.try_get<LT>(eid);
         if (lt) return lt->child_to_parent;
         return std::nullopt;
     }
 
+    /// Remove the local transform for an entity. Returns the old component if it existed.
     std::optional<LT> remove_transform(entt::entity eid) {
         auto* lt = _reg.try_get<LT>(eid);
         if (not lt) return std::nullopt;
@@ -75,6 +93,7 @@ struct TransformSystem {
      * Queries
      ****************************/
 
+    /// Compute the cumulative transform that positions `node` in the space of the root.
     xfn object_to_world(entt::entity node) const {
         xfn xf;
         entt::entity cur = node;
@@ -89,6 +108,12 @@ struct TransformSystem {
     }
 
 
+    /**
+     * @brief Compute the transform from `from_node`'s space to `to_node`'s space.
+     *
+     * Both nodes must be in the same tree. The transform is computed via
+     * their deepest common ancestor.
+     */
     xfn xf_between(entt::entity from_node, entt::entity to_node) const {
         TreePath p0 = _hierarchy.path(from_node);
         TreePath p1 = _hierarchy.path(to_node);
@@ -123,6 +148,13 @@ struct TransformSystem {
      * Traversal
      ****************************/
 
+    /**
+     * @brief Create a traversal which yields `TransformedNode<NodeEntry,T,N>`.
+     *
+     * Each node carries a `node_to_root` transform accumulated from the
+     * traversal root. The traversal includes the root itself with identity
+     * transform.
+     */
     auto traverse(entt::entity root, SiblingOrder order) const {
         return augment_with_transforms(
             _hierarchy.traverse(root, order),
@@ -131,6 +163,14 @@ struct TransformSystem {
     }
 
 
+    /**
+     * @brief Convert a traversal of `Node` to a traversal of `TransformedNode<Node,T,N>`.
+     *
+     * `GetId` is a callable which takes a `Node&` and returns the
+     * `entt::entity` of the node, used to look up the LocalTransform component.
+     *
+     * The transform for each node is relative to the traversal root.
+     */
     template <AnyTraversalConcept Traversal, typename GetId>
     auto augment_with_transforms(Traversal&& t, GetId&& get_id) const {
         using Node = typename TraversalValue<Traversal>::Node;

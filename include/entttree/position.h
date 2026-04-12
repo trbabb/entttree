@@ -1,3 +1,8 @@
+/**
+ * @file position.h
+ * @brief Fractional-index type for ordering siblings in a hierarchy.
+ */
+
 #pragma once
 
 #include <entttree/defs.h>
@@ -5,11 +10,19 @@
 namespace entttree {
 
 /**
- * @brief A fractional index with strong ordering.
+ * @brief A fractional index with strong ordering, used for sibling positioning.
  *
- * This is an infinite precision number between 0 and 1 exclusive. It can be
- * thought of as a base 256 representation with unlimited digits right of the decimal.
- * The leading zero is not stored.
+ * This is an infinite-precision number between 0 and 1 exclusive, represented
+ * as a base-256 value with unlimited digits right of the decimal point. The
+ * leading zero is not stored.
+ *
+ * Chunking into 8-bit symbols balances two growth pressures: large symbols
+ * reduce growth from sequential `before()`/`after()` calls (~128 steps before
+ * a new symbol is needed), while the `between()` operation grows the number
+ * only when the last symbols of the two positions are within 1 of each other.
+ *
+ * Up to 14 symbols (112 bits) are stored inline; beyond that, heap storage
+ * is used. Default-constructed positions start at the midpoint (0.5).
  */
 struct Position {
     using symbol_t = uint8_t;
@@ -29,10 +42,10 @@ private:
 
     // high order bits are at low indices.
     union {
-        symbol_t  _symbols[K];
-        symbol_t* _symbol_ptr;
+        symbol_t  _symbols[K];  ///< Inline storage for small positions.
+        symbol_t* _symbol_ptr;  ///< Heap pointer when size exceeds K.
     };
-    uint16_t _size;
+    uint16_t _size;  ///< Number of symbols in the representation.
 
     Position(size_t n);
 
@@ -47,6 +60,7 @@ protected:
 
 public:
 
+    /// Construct a Position at the midpoint (0.5).
     Position();
     Position(const Position&  other);
     Position(      Position&& other);
@@ -55,13 +69,25 @@ public:
     Position& operator=(const Position&  other);
     Position& operator=(      Position&& other);
 
+    /// Lexicographic three-way comparison.
     std::strong_ordering operator<=>(const Position& other) const;
     bool operator==(const Position& other) const {
         return (*this <=> other) == std::strong_ordering::equal;
     }
 
+    /// @brief Return a position immediately before this one.
     Position before() const;
+
+    /**
+     * @brief Return a position midway between this position and `other`.
+     *
+     * The result is always strictly between the two operands regardless
+     * of their ordering. The representation may grow by one symbol when
+     * the two positions are adjacent.
+     */
     Position between(const Position& other) const;
+
+    /// @brief Return a position immediately after this one.
     Position after()  const;
 };
 

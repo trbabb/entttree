@@ -1,3 +1,16 @@
+/**
+ * @file traverse.h
+ * @brief Lazy, composable graph traversal framework built on C++20 generators.
+ *
+ * A Traversal encapsulates a starting node (root) and a successor function
+ * that generates children for each node. The traversal itself is abstract —
+ * it describes the *structure* of the graph rather than a specific walk order.
+ *
+ * Traversal adaptors (in the `walk` namespace) compose to filter, prune, map,
+ * or reverse the successor structure. Walk functions (`walk::dfs`, `walk::bfs`)
+ * flatten a Traversal into a linear Generator of nodes.
+ */
+
 #pragma once
 
 #include <deque>
@@ -16,19 +29,47 @@ namespace entttree {
  * traversal class + concept *
  *****************************/
 
+/**
+ * @brief A lazy description of a rooted graph traversal.
+ *
+ * By keeping information about the structure of the tree (rather than a flat
+ * generator), we can more easily implement transformations and filters on the
+ * traversal. See the `walk` namespace for adaptors and walkers.
+ *
+ * @tparam Node_       The type of each node in the traversal.
+ * @tparam Successors_ A callable `(Node&) -> Generator<Node>` that yields
+ *                     the children of a given node.
+ */
 template <typename Node_, typename Successors_>
 struct Traversal {
     using Node       = Node_;
     using Successors = Successors_;
 
+    /// The starting point of the traversal, or empty to disable it.
     std::optional<Node> root;
+
+    /**
+     * @brief A function returning a generator of the successors of a node.
+     *
+     * Signature: `Successors(Node&) -> GeneratorConcept<Node>`
+     *
+     * Any references within the values yielded by the generator must remain
+     * valid at least until the generator is destroyed.
+     */
     Successors successors;
 
+    /**
+     * @brief Conditionally disable the traversal.
+     *
+     * If `enable` is false, the root is cleared, causing the traversal
+     * to produce no nodes. An already-disabled traversal remains disabled.
+     */
     Traversal&& enable(bool enable) && {
         if (not enable) root = std::nullopt;
         return std::move(*this);
     }
 
+    /// @copydoc enable(bool)&&
     Traversal& enable(bool enable) & {
         if (not enable) root = std::nullopt;
         return *this;
@@ -37,19 +78,23 @@ struct Traversal {
 
 
 /*****************************
- * concepts                  *
+ * concepts + type helpers   *
  *****************************/
 
+/// Strip references/cv to get the bare Traversal type.
 template <typename T>
 using TraversalValue = std::remove_cvref_t<T>;
 
+/// Extract the Node type from a Traversal (after stripping cvref).
 template <typename T>
 using TraversalNode = typename TraversalValue<T>::Node;
 
+/// Extract the Successors callable type from a Traversal.
 template <typename T>
 using TraversalSuccessors = typename TraversalValue<T>::Successors;
 
 
+/// A type `G` that can be advanced, dereferenced, and tested for exhaustion.
 template <typename G, typename T>
 concept GeneratorConcept = requires (G g) {
     {   g } -> std::convertible_to<bool>;
@@ -58,6 +103,7 @@ concept GeneratorConcept = requires (G g) {
 };
 
 
+/// Satisfied by types that have a root and a successors function yielding `Node`.
 template <typename T, typename Node>
 concept TraversalConcept =
 requires (TraversalValue<T> t, Node& n) {
@@ -67,6 +113,7 @@ requires (TraversalValue<T> t, Node& n) {
 };
 
 
+/// Satisfied by any type that is a Traversal over its own Node type.
 template <typename T>
 concept AnyTraversalConcept = requires {
     typename TraversalNode<T>;
@@ -74,18 +121,22 @@ concept AnyTraversalConcept = requires {
 } && TraversalConcept<T, TraversalNode<T>>;
 
 
+/// The generator type returned by a successor function.
 template <typename Successors, typename Node>
 using SuccessorGenerator = std::invoke_result_t<Successors&, Node&>;
 
+/// The value type yielded by a successor generator.
 template <typename Successors, typename Node>
 using SuccessorOutput = decltype(*std::declval<SuccessorGenerator<Successors,Node>&>());
 
+/// The value type yielded by a traversal's successor generator.
 template <typename Traversal>
 using TraversalOutput = SuccessorOutput<
     TraversalSuccessors<Traversal>,
     TraversalNode<Traversal>
 >;
 
+/// The concrete generator type produced by a traversal's successor function.
 template <typename Traversal>
 using TraversalGenerator = std::remove_cvref_t<
     SuccessorGenerator<
@@ -99,6 +150,13 @@ using TraversalGenerator = std::remove_cvref_t<
  * traversal generation      *
  *****************************/
 
+/**
+ * @brief Construct a Traversal from an optional root and a successor function.
+ *
+ * @param root       The starting node (or empty to create a disabled traversal).
+ * @param successors A callable `(Node&) -> Generator<Node>` that yields the
+ *                   children of a given node.
+ */
 template <typename Node, typename Successors>
 requires requires (Successors s, Node& n) {
     { s(n) } -> GeneratorConcept<Node>;
@@ -115,6 +173,7 @@ auto make_traversal(
 }
 
 
+/// @copydoc make_traversal(std::optional<Node>&&, Successors&&)
 template <typename Node, typename Successors>
 requires requires (Successors s, Node& n) {
     { s(n) } -> GeneratorConcept<Node>;
@@ -131,6 +190,7 @@ auto make_traversal(
 }
 
 
+/// @overload Convenience: wraps a non-optional root in `std::optional`.
 template <typename Node, typename Successors>
 requires requires (Successors s, std::remove_cvref_t<Node>& n) {
     { s(n) } -> GeneratorConcept<std::remove_cvref_t<Node>>;
@@ -158,6 +218,17 @@ namespace walk {
  * traversal adaptors        *
  *****************************/
 
+/**
+ * @brief Prevent certain nodes from generating successors.
+ *
+ * If `should_explore(node)` returns true, the node's children are explored
+ * normally; otherwise the node generates zero successors. The node itself
+ * is still visited regardless — to suppress the node entirely, use
+ * exclude_if() instead.
+ *
+ * @param t                The source traversal.
+ * @param should_explore   `(const Node&) -> bool`
+ */
 template <AnyTraversalConcept T, typename Filter>
 auto prune_if(T&& t, Filter should_explore) {
     using Traversal = TraversalValue<T>;
@@ -181,6 +252,16 @@ auto prune_if(T&& t, Filter should_explore) {
 }
 
 
+/**
+ * @brief Remove certain nodes from the graph entirely.
+ *
+ * If `should_admit(node)` returns true, the node is visited; otherwise it
+ * is skipped. Excluded nodes are not explored, so their subtrees are also
+ * excluded. To visit a node but suppress its children, use prune_if().
+ *
+ * @param t              The source traversal.
+ * @param should_admit   `(const Node&) -> bool`
+ */
 template <AnyTraversalConcept T, typename Filter>
 auto exclude_if(T&& t, Filter should_admit) {
     using Traversal = TraversalValue<T>;
@@ -212,6 +293,14 @@ auto exclude_if(T&& t, Filter should_admit) {
 }
 
 
+/**
+ * @brief Reverse the order of each node's successors.
+ *
+ * This is a generic operation that buffers all children of each node before
+ * yielding them in reverse. If the traversal source can enumerate children
+ * in reverse cheaply (e.g. `HierarchySystem::children(..., SiblingOrder::Backward)`),
+ * prefer that approach instead.
+ */
 template <AnyTraversalConcept T>
 auto reverse_successors(T&& t) {
     using Traversal = TraversalValue<T>;
@@ -237,6 +326,16 @@ auto reverse_successors(T&& t) {
 }
 
 
+/**
+ * @brief Transform the node type of a traversal.
+ *
+ * Applies `xform(Node&) -> Value` to every node, producing a new Traversal
+ * with node type `Value`. Common uses include extracting fields from a node
+ * or augmenting it with additional computed data.
+ *
+ * @param t      The source traversal.
+ * @param xform  `(Node&) -> Value`
+ */
 template <AnyTraversalConcept Traversal, typename Transform>
 auto map_nodes(Traversal&& t, Transform&& xform) {
     using T = TraversalValue<Traversal>;
@@ -271,6 +370,7 @@ auto map_nodes(Traversal&& t, Transform&& xform) {
  * traversal walkers         *
  *****************************/
 
+/// @cond INTERNAL
 namespace detail {
 
 template <typename Node, typename SuccessorGenerator>
@@ -353,8 +453,18 @@ Generator<Node> bfs(
 }
 
 }  // namespace detail
+/// @endcond
 
 
+/**
+ * @brief Flatten a Traversal into a depth-first Generator.
+ *
+ * The walk order is selected at compile time via the template parameter.
+ * Uses an explicit stack (not recursion) for efficiency.
+ *
+ * @tparam recursion_order `DfsOrder::ShallowFirst` (pre-order, default) or
+ *                         `DfsOrder::DeepFirst` (post-order).
+ */
 template <
     DfsOrder recursion_order = DfsOrder::ShallowFirst,
     AnyTraversalConcept T
@@ -371,6 +481,7 @@ auto dfs(T&& t) {
 }
 
 
+/// @overload Runtime-selected DFS order.
 template <AnyTraversalConcept T>
 auto dfs(
         T&&            t,
@@ -383,6 +494,11 @@ auto dfs(
 }
 
 
+/**
+ * @brief Flatten a Traversal into a breadth-first Generator.
+ *
+ * Nodes are visited level by level, using an internal queue.
+ */
 template <AnyTraversalConcept T>
 auto bfs(T&& t) {
     using Traversal = TraversalValue<T>;
@@ -402,6 +518,19 @@ auto bfs(T&& t) {
  * utility transformation    *
  *****************************/
 
+/**
+ * @brief Transform a traversal inductively, threading parent context through successors.
+ *
+ * Changes the traversal from node type `Node` to `Value`, where each child's
+ * value is computed from its parent's value and the original child node.
+ *
+ * @param t               The source traversal.
+ * @param make_successor  `(optional<Value>& parent, Node&& child) -> optional<Value>`.
+ *                        The root's parent is `std::nullopt`. If the function returns
+ *                        `std::nullopt`, the node is skipped.
+ * @param get_node        `(Value&) -> Node&` extracts the original node from a Value
+ *                        so the inner successor function can operate on it.
+ */
 template <
     typename Node,
     typename Value,
