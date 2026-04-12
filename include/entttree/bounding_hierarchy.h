@@ -46,11 +46,11 @@ struct BoundsSystem {
      ****************************/
 
     /// Emitted when intrinsic bounds are first set on an entity. Args: (entity, new_bounds).
-    entt::sigh<void(entt::entity, rangen)>           on_bounds_set;
+    entt::sigh<void(entt::entity, rangen)>         on_bounds_set;
     /// Emitted when intrinsic bounds are removed from an entity. Args: (entity, old_bounds).
-    entt::sigh<void(entt::entity, rangen)>           on_bounds_removed;
+    entt::sigh<void(entt::entity, rangen)>         on_bounds_removed;
     /// Emitted when an existing intrinsic bounds value changes. Args: (entity, old_bounds, new_bounds).
-    entt::sigh<void(entt::entity, rangen, rangen)>   on_bounds_changed;
+    entt::sigh<void(entt::entity, rangen, rangen)> on_bounds_changed;
 
     /****************************
      * Construction
