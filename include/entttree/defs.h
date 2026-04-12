@@ -24,12 +24,12 @@ using DenseMap = ankerl::unordered_dense::map<K,V,Hasher,KeyEqual>;
 template <typename T, typename Hasher=std::hash<T>, typename KeyEqual=std::equal_to<T>>
 using DenseSet = ankerl::unordered_dense::set<T,Hasher,KeyEqual>;
 
-enum struct RecursionOrder {
+enum struct DfsOrder {
     ShallowFirst,
     DeepFirst
 };
 
-enum struct SiblingTraversalOrder {
+enum struct SiblingOrder {
     Forward,
     Backward
 };

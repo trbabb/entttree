@@ -132,7 +132,7 @@ struct BoundsSystem {
      * Traversal
      ****************************/
 
-    auto traverse(entt::entity root, SiblingTraversalOrder order) {
+    auto traverse(entt::entity root, SiblingOrder order) {
         return augment_with_bounds(
             _transforms.traverse(root, order)
         );
@@ -141,8 +141,8 @@ struct BoundsSystem {
 
     template <TransformedTraversal<T,N> Traversal>
     auto augment_with_bounds(Traversal&& t) {
-        using Node = typename Traversal::Node::InnerNode;
-        return entttree::transform(
+        using Node = typename TraversalValue<Traversal>::Node::InnerNode;
+        return entttree::walk::map_nodes(
             std::forward<Traversal>(t),
             [this] (TransformedNode<Node,T,N>& n) -> BoundedNode<Node,T,N> {
                 entt::entity eid = n.node.node_id;
@@ -165,9 +165,9 @@ struct BoundsSystem {
 
     template <BoundedTraversal<T,N> Traversal>
     auto traverse_under_point(Traversal&& t, vecn p) {
-        using InnerNode = typename Traversal::Node::InnerNode;
-        return entttree::filter(
-            entttree::transform(
+        using InnerNode = typename TraversalValue<Traversal>::Node::InnerNode;
+        return entttree::walk::exclude_if(
+            entttree::walk::map_nodes(
                 std::forward<Traversal>(t),
                 [p](BoundedNode<InnerNode,T,N>& n) -> PointSearchNode<InnerNode,T,N> {
                     return {n, p / n.node_to_root};
@@ -183,11 +183,11 @@ struct BoundsSystem {
 
     Generator<PointSearchNode<NodeEntry,T,N>> search_under_point(
             entt::entity root,
-            SiblingTraversalOrder sibling_order,
-            RecursionOrder recursion_order,
+            SiblingOrder sibling_order,
+            DfsOrder recursion_order,
             vecn p)
     {
-        auto g = entttree::traverse_dfs(
+        auto g = entttree::walk::dfs(
             traverse_under_point(traverse(root, sibling_order), p),
             recursion_order
         );
@@ -202,9 +202,9 @@ struct BoundsSystem {
 
     template <BoundedTraversal<T,N> Traversal>
     auto traverse_along_ray(Traversal&& t, rayn ray) {
-        using InnerNode = typename Traversal::Node::InnerNode;
-        return entttree::filter(
-            entttree::transform(
+        using InnerNode = typename TraversalValue<Traversal>::Node::InnerNode;
+        return entttree::walk::exclude_if(
+            entttree::walk::map_nodes(
                 std::forward<Traversal>(t),
                 [ray](BoundedNode<InnerNode,T,N>& n) -> RaySearchNode<InnerNode,T,N> {
                     rayn local_ray = ray / n.node_to_root;
@@ -225,11 +225,11 @@ struct BoundsSystem {
 
     Generator<RaySearchNode<NodeEntry,T,N>> search_along_ray(
             entt::entity root,
-            SiblingTraversalOrder sibling_order,
-            RecursionOrder recursion_order,
+            SiblingOrder sibling_order,
+            DfsOrder recursion_order,
             rayn ray)
     {
-        auto g = entttree::traverse_dfs(
+        auto g = entttree::walk::dfs(
             traverse_along_ray(traverse(root, sibling_order), ray),
             recursion_order
         );
@@ -274,7 +274,7 @@ private:
         auto* ib = _reg.try_get<IB>(eid);
         if (ib) b = ib->bounds;
 
-        for (auto g = _transforms.hierarchy().children(eid, SiblingTraversalOrder::Forward); g; ++g) {
+        for (auto g = _transforms.hierarchy().children(eid, SiblingOrder::Forward); g; ++g) {
             entt::entity child = g->node_id;
             rangen child_bound = rangen::empty;
 

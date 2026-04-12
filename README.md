@@ -30,7 +30,7 @@ h.set_parent(child, root, position);      // ...at a specific position
 h.order_child_before(child_a, child_b);   // reorder siblings
 
 // traversal
-for (auto g = h.traverse_dfs(root); g; ++g) {
+for (auto g = entttree::walk::dfs(h.traverse(root, SiblingTraversalOrder::Forward)); g; ++g) {
     // visit nodes depth-first
 }
 
@@ -77,17 +77,77 @@ Traversals are lazy, coroutine-based generators that can be composed:
 ```cpp
 auto t = h.traverse(root, SiblingTraversalOrder::Forward);
 
-// add transforms
-auto with_xf = xf.augment_with_transforms(t, [](auto& n) { return n.node_id; });
+// filter nodes out of the graph entirely
+auto visible = entttree::walk::exclude_if(t, [](const auto& node) {
+    return is_visible(node);
+});
 
-// filter branches
-auto pruned = entttree::prune(t, [](auto& node) { return should_explore(node); });
+// prune descendants, but still visit the node itself
+auto in_frustum = entttree::walk::prune_if(visible, [](const auto& node) {
+    return should_explore(node);
+});
 
-// depth-first walk
-for (auto g = entttree::traverse_dfs(t, RecursionOrder::ShallowFirst); g; ++g) {
+// choose a walker + visit order
+for (auto g = entttree::walk::dfs(
+         in_frustum,
+         RecursionOrder::ShallowFirst); g; ++g) {
+    // ...
+}
+
+// compile-time options are available too
+for (auto g = entttree::walk::dfs<
+         RecursionOrder::DeepFirst>(in_frustum); g; ++g) {
+    // ...
+}
+
+// sibling order is controlled by the traversal source
+auto backward = h.traverse(root, SiblingTraversalOrder::Backward);
+for (auto g = entttree::walk::dfs(backward); g; ++g) {
+    // ...
+}
+
+// generic reversal is possible when the source cannot do it cheaply
+auto reversed = entttree::walk::reverse_successors(in_frustum);
+for (auto g = entttree::walk::bfs(reversed); g; ++g) {
     // ...
 }
 ```
+
+### Traversal node semantics
+
+Traversal nodes are intentionally stored and queued by value. To avoid expensive copies,
+`Node` should normally be a lightweight handle (entity ID, pointer, index, or
+`std::reference_wrapper<T>`), not a heavyweight component payload.
+
+```cpp
+// good: cheap handle traversal
+auto t = entttree::make_traversal(
+    root_entity,
+    [&h] (entt::entity& e) { return h.children(e, SiblingTraversalOrder::Forward); }
+);
+
+// augment without copying components
+struct NodeView {
+    entt::entity eid;
+    const Renderable* render;
+    const LocalTransform<RenderH,double,2>* xf;
+};
+
+auto view = entttree::walk::map_nodes(t, [&reg] (entt::entity& eid) -> NodeView {
+    return {
+        eid,
+        reg.try_get<Renderable>(eid),
+        reg.try_get<LocalTransform<RenderH,double,2>>(eid)
+    };
+});
+```
+
+If you need stable reference semantics during traversal, do not mutate data structures
+in ways that invalidate those references while the generator is active.
+
+`walk::reverse_successors(...)` buffers each expanded node's child list in a temporary
+vector. If your source can already enumerate children in reverse cheaply (like
+`HierarchySystem::children(..., SiblingTraversalOrder::Backward)`), prefer that.
 
 ## Dependencies
 

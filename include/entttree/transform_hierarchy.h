@@ -123,7 +123,7 @@ struct TransformSystem {
      * Traversal
      ****************************/
 
-    auto traverse(entt::entity root, SiblingTraversalOrder order) const {
+    auto traverse(entt::entity root, SiblingOrder order) const {
         return augment_with_transforms(
             _hierarchy.traverse(root, order),
             [](const NodeEntry& n) { return n.node_id; }
@@ -133,7 +133,7 @@ struct TransformSystem {
 
     template <AnyTraversalConcept Traversal, typename GetId>
     auto augment_with_transforms(Traversal&& t, GetId&& get_id) const {
-        using Node = typename Traversal::Node;
+        using Node = typename TraversalValue<Traversal>::Node;
         return make_traversal(
             t.root
                 ? std::make_optional(

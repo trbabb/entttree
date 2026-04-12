@@ -304,12 +304,12 @@ struct HierarchySystem {
 
     Generator<NodeEntry> children(
             entt::entity parent,
-            SiblingTraversalOrder order) const
+            SiblingOrder order) const
     {
         auto it = _children.find(parent);
         if (it == _children.end()) co_return;
         const ChildList& ch = it->second;
-        if (order == SiblingTraversalOrder::Forward) {
+        if (order == SiblingOrder::Forward) {
             for (const auto& c : ch) {
                 co_yield NodeEntry {c.eid, parent, c.position};
             }
@@ -332,7 +332,7 @@ struct HierarchySystem {
     }
 
 
-    auto traverse(entt::entity root, SiblingTraversalOrder order) const {
+    auto traverse(entt::entity root, SiblingOrder order) const {
         NodeEntry root_entry {
             root,
             parent_of(root),
@@ -346,18 +346,16 @@ struct HierarchySystem {
         );
     }
 
-
     Generator<NodeEntry> traverse_dfs(
             entt::entity root,
-            SiblingTraversalOrder sibling_order = SiblingTraversalOrder::Forward,
-            RecursionOrder recursion_order = RecursionOrder::ShallowFirst) const
+            SiblingOrder sibling_order = SiblingOrder::Forward,
+            DfsOrder recursion_order = DfsOrder::ShallowFirst) const
     {
-        return entttree::traverse_dfs(
+        return entttree::walk::dfs(
             this->traverse(root, sibling_order),
             recursion_order
         );
     }
-
 
     TreePath path(entt::entity node) const {
         TreePath p;

@@ -84,7 +84,7 @@ struct TransformedNode {
 template <typename Traversal, typename T, size_t N>
 concept TransformedTraversal = TraversalConcept<
     Traversal,
-    TransformedNode<typename Traversal::Node::InnerNode,T,N>
+    TransformedNode<typename std::remove_cvref_t<Traversal>::Node::InnerNode,T,N>
 >;
 
 
@@ -97,7 +97,7 @@ struct BoundedNode : public TransformedNode<Node,T,N> {
 template <typename Traversal, typename T, size_t N>
 concept BoundedTraversal = TraversalConcept<
     Traversal,
-    BoundedNode<typename Traversal::Node::InnerNode,T,N>
+    BoundedNode<typename std::remove_cvref_t<Traversal>::Node::InnerNode,T,N>
 >;
 
 

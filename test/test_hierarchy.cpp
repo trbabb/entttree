@@ -52,7 +52,7 @@ void test_multiple_children_ordering() {
 
     // children should be in insertion order
     std::vector<entt::entity> kids;
-    for (auto g = h.children(root, SiblingTraversalOrder::Forward); g; ++g) {
+    for (auto g = h.children(root, SiblingOrder::Forward); g; ++g) {
         kids.push_back(g->node_id);
     }
     assert(kids.size() == 3);
@@ -63,7 +63,7 @@ void test_multiple_children_ordering() {
     // reorder: move c before a
     h.order_child_before(c, a);
     kids.clear();
-    for (auto g = h.children(root, SiblingTraversalOrder::Forward); g; ++g) {
+    for (auto g = h.children(root, SiblingOrder::Forward); g; ++g) {
         kids.push_back(g->node_id);
     }
     assert(kids[0] == c);
@@ -175,7 +175,9 @@ void test_traversal() {
 
     // DFS preorder: root, a, a1, a2, b
     std::vector<entt::entity> visited;
-    for (auto g = h.traverse_dfs(root); g; ++g) {
+    for (auto g = walk::dfs(
+            h.traverse(root, SiblingOrder::Forward),
+            DfsOrder::ShallowFirst); g; ++g) {
         visited.push_back(g->node_id);
     }
     assert(visited.size() == 5);
@@ -184,6 +186,71 @@ void test_traversal() {
     assert(visited[2] == a1);
     assert(visited[3] == a2);
     assert(visited[4] == b);
+
+    std::cout << "ok\n";
+}
+
+
+void test_traversal_adaptors_and_walkers() {
+    std::cout << "test_traversal_adaptors_and_walkers... ";
+
+    auto t = make_traversal(
+        0,
+        [] (int& node) -> Generator<int> {
+            switch (node) {
+                case 0: co_yield 1; co_yield 2; break;
+                case 1: co_yield 3; co_yield 4; break;
+                case 2: co_yield 5; co_yield 6; break;
+                default: break;
+            }
+        }
+    );
+
+    auto only_even = walk::exclude_if(t, [] (int node) {
+        return (node % 2) == 0;
+    });
+    std::vector<int> even_pre;
+    for (auto g = walk::dfs(only_even, DfsOrder::ShallowFirst); g; ++g) {
+        even_pre.push_back(*g);
+    }
+    assert((even_pre == std::vector<int>{0, 2, 6}));
+
+    auto no_root = walk::exclude_if(t, [] (int node) {
+        return node != 0;
+    });
+    std::vector<int> excluded_root;
+    for (auto g = walk::dfs(no_root); g; ++g) {
+        excluded_root.push_back(*g);
+    }
+    assert(excluded_root.empty());
+
+    auto stop_at_root = walk::prune_if(t, [] (int node) {
+        return node != 0;
+    });
+    std::vector<int> pruned_root;
+    for (auto g = walk::dfs(stop_at_root); g; ++g) {
+        pruned_root.push_back(*g);
+    }
+    assert((pruned_root == std::vector<int>{0}));
+
+    std::vector<int> bfs_order;
+    for (auto g = walk::bfs(t); g; ++g) {
+        bfs_order.push_back(*g);
+    }
+    assert((bfs_order == std::vector<int>{0, 1, 2, 3, 4, 5, 6}));
+
+    auto reversed = walk::reverse_successors(t);
+    std::vector<int> dfs_backward;
+    for (auto g = walk::dfs(reversed); g; ++g) {
+        dfs_backward.push_back(*g);
+    }
+    assert((dfs_backward == std::vector<int>{0, 2, 6, 5, 1, 4, 3}));
+
+    std::vector<int> bfs_backward;
+    for (auto g = walk::bfs(reversed); g; ++g) {
+        bfs_backward.push_back(*g);
+    }
+    assert((bfs_backward == std::vector<int>{0, 2, 1, 6, 5, 4, 3}));
 
     std::cout << "ok\n";
 }
@@ -271,6 +338,57 @@ void test_transforms() {
     Vec<double,2> result = world * origin;
     assert(std::abs(result[0] - 8.0) < 1e-10);
     assert(std::abs(result[1]) < 1e-10);
+
+    std::cout << "ok\n";
+}
+
+
+void test_transform_traversal_functions() {
+    std::cout << "test_transform_traversal_functions... ";
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    TransformSystem<SceneH, double, 2> xf(reg, h);
+
+    auto root = reg.create();
+    auto a    = reg.create();
+    auto b    = reg.create();
+    auto c    = reg.create();
+
+    h.set_parent(a, root);
+    h.set_parent(b, root);
+    h.set_parent(c, a);
+
+    using V = Vec<double,2>;
+    xf.set_transform(root, translation(V{100.0, 0.0}));
+    xf.set_transform(a, translation(V{10.0, 0.0}));
+    xf.set_transform(c, translation(V{1.0, 0.0}));
+
+    std::vector<entt::entity> order;
+    std::vector<double> x_to_root;
+    for (auto g = walk::dfs(xf.traverse(root, SiblingOrder::Forward)); g; ++g) {
+        order.push_back(g->node.node_id);
+        x_to_root.push_back((g->node_to_root * V{0.0, 0.0})[0]);
+    }
+
+    assert((order == std::vector<entt::entity>{root, a, c, b}));
+
+    // node_to_root is relative to traversal root, so root is identity.
+    assert(std::abs(x_to_root[0] - 0.0) < 1e-10);
+    assert(std::abs(x_to_root[1] - 10.0) < 1e-10);
+    assert(std::abs(x_to_root[2] - 11.0) < 1e-10);
+    assert(std::abs(x_to_root[3] - 0.0) < 1e-10);
+
+    auto base = h.traverse(root, SiblingOrder::Forward);
+    auto with_xf = xf.augment_with_transforms(
+        base,
+        [](const NodeEntry& n) { return n.node_id; }
+    );
+    std::vector<entt::entity> augmented_order;
+    for (auto g = walk::dfs(with_xf); g; ++g) {
+        augmented_order.push_back(g->node.node_id);
+    }
+    assert((augmented_order == order));
 
     std::cout << "ok\n";
 }
@@ -656,6 +774,62 @@ void test_bounds_parent_and_child_intrinsic() {
 }
 
 
+void test_bounds_traversal_functions() {
+    std::cout << "test_bounds_traversal_functions... ";
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    TransformSystem<SceneH, double, 2> xf(reg, h);
+    BoundsSystem<SceneH, double, 2> bs(reg, xf);
+
+    auto root = reg.create();
+    auto a    = reg.create();
+    auto b    = reg.create();
+    h.set_parent(a, root);
+    h.set_parent(b, root);
+
+    xf.set_transform(a, translation(V2{5.0, 0.0}));
+    xf.set_transform(b, translation(V2{-5.0, 10.0}));
+
+    bs.set_intrinsic_bounds(a, R2{V2{0,0}, V2{2,2}});
+    bs.set_intrinsic_bounds(b, R2{V2{0,0}, V2{2,2}});
+
+    std::vector<entt::entity> full;
+    for (auto g = walk::dfs(bs.traverse(root, SiblingOrder::Forward)); g; ++g) {
+        full.push_back(g->node.node_id);
+    }
+    assert((full == std::vector<entt::entity>{root, a, b}));
+
+    V2 point{5.5, 1.0};
+    std::vector<entt::entity> under_point;
+    for (auto g = walk::dfs(bs.traverse_under_point(bs.traverse(root, SiblingOrder::Forward), point)); g; ++g) {
+        under_point.push_back(g->node.node_id);
+    }
+    assert((under_point == std::vector<entt::entity>{root, a}));
+
+    std::vector<entt::entity> search_point;
+    for (auto g = bs.search_under_point(root, SiblingOrder::Forward, DfsOrder::ShallowFirst, point); g; ++g) {
+        search_point.push_back(g->node.node_id);
+    }
+    assert((search_point == std::vector<entt::entity>{a}));
+
+    Ray<double,2> ray{V2{0.0, 1.0}, V2{1.0, 0.0}};
+    std::vector<entt::entity> along_ray;
+    for (auto g = walk::dfs(bs.traverse_along_ray(bs.traverse(root, SiblingOrder::Forward), ray)); g; ++g) {
+        along_ray.push_back(g->node.node_id);
+    }
+    assert((along_ray == std::vector<entt::entity>{root, a}));
+
+    std::vector<entt::entity> search_ray;
+    for (auto g = bs.search_along_ray(root, SiblingOrder::Forward, DfsOrder::ShallowFirst, ray); g; ++g) {
+        search_ray.push_back(g->node.node_id);
+    }
+    assert((search_ray == std::vector<entt::entity>{root, a}));
+
+    std::cout << "ok\n";
+}
+
+
 int main() {
     test_basic_hierarchy();
     test_multiple_children_ordering();
@@ -663,9 +837,11 @@ int main() {
     test_unparent();
     test_signals();
     test_traversal();
+    test_traversal_adaptors_and_walkers();
     test_dca_and_path();
     test_multiple_hierarchies();
     test_transforms();
+    test_transform_traversal_functions();
 
     // bounds system tests
     test_bounds_basic();
@@ -678,6 +854,7 @@ int main() {
     test_bounds_deep_hierarchy();
     test_bounds_intrinsic_change();
     test_bounds_parent_and_child_intrinsic();
+    test_bounds_traversal_functions();
 
     std::cout << "\nall tests passed.\n";
     return 0;

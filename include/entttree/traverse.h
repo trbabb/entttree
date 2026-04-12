@@ -1,7 +1,11 @@
 #pragma once
 
+#include <deque>
 #include <list>
+#include <optional>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include <entttree/defs.h>
 #include <entttree/generator.h>
@@ -36,6 +40,16 @@ struct Traversal {
  * concepts                  *
  *****************************/
 
+template <typename T>
+using TraversalValue = std::remove_cvref_t<T>;
+
+template <typename T>
+using TraversalNode = typename TraversalValue<T>::Node;
+
+template <typename T>
+using TraversalSuccessors = typename TraversalValue<T>::Successors;
+
+
 template <typename G, typename T>
 concept GeneratorConcept = requires (G g) {
     {   g } -> std::convertible_to<bool>;
@@ -43,35 +57,40 @@ concept GeneratorConcept = requires (G g) {
     { ++g } -> std::convertible_to<G&>;
 };
 
+
 template <typename T, typename Node>
 concept TraversalConcept =
-requires (T t, Node& n) {
-    { *(t.root) }       -> std::convertible_to<Node>;
-    { t.successors(n) } -> GeneratorConcept<Node>;
+requires (TraversalValue<T> t, Node& n) {
+    { t.root.has_value() } -> std::convertible_to<bool>;
+    { *(t.root) }          -> std::convertible_to<Node>;
+    { t.successors(n) }    -> GeneratorConcept<Node>;
 };
+
 
 template <typename T>
-concept AnyTraversalConcept = requires (T t) {
-    { t } -> TraversalConcept<typename T::Node>;
-};
+concept AnyTraversalConcept = requires {
+    typename TraversalNode<T>;
+    typename TraversalSuccessors<T>;
+} && TraversalConcept<T, TraversalNode<T>>;
+
 
 template <typename Successors, typename Node>
-using SuccessorGenerator = std::invoke_result_t<Successors, Node>;
+using SuccessorGenerator = std::invoke_result_t<Successors&, Node&>;
 
 template <typename Successors, typename Node>
-using SuccessorOutput = decltype(*std::declval<SuccessorGenerator<Successors,Node>>());
+using SuccessorOutput = decltype(*std::declval<SuccessorGenerator<Successors,Node>&>());
 
 template <typename Traversal>
 using TraversalOutput = SuccessorOutput<
-    typename Traversal::Successors,
-    typename Traversal::Node
+    TraversalSuccessors<Traversal>,
+    TraversalNode<Traversal>
 >;
 
 template <typename Traversal>
 using TraversalGenerator = std::remove_cvref_t<
-    std::invoke_result_t<
-        typename Traversal::Successors,
-        typename Traversal::Node
+    SuccessorGenerator<
+        TraversalSuccessors<Traversal>,
+        TraversalNode<Traversal>
     >
 >;
 
@@ -81,7 +100,7 @@ using TraversalGenerator = std::remove_cvref_t<
  *****************************/
 
 template <typename Node, typename Successors>
-requires requires (Successors s, Node n) {
+requires requires (Successors s, Node& n) {
     { s(n) } -> GeneratorConcept<Node>;
 }
 auto make_traversal(
@@ -95,8 +114,9 @@ auto make_traversal(
     };
 }
 
+
 template <typename Node, typename Successors>
-requires requires (Successors s, Node n) {
+requires requires (Successors s, Node& n) {
     { s(n) } -> GeneratorConcept<Node>;
 }
 auto make_traversal(
@@ -110,58 +130,81 @@ auto make_traversal(
     };
 }
 
+
 template <typename Node, typename Successors>
-requires requires (Successors s, Node n) {
-    { s(n) } -> GeneratorConcept<Node>;
+requires requires (Successors s, std::remove_cvref_t<Node>& n) {
+    { s(n) } -> GeneratorConcept<std::remove_cvref_t<Node>>;
 }
 auto make_traversal(
         Node&& root,
         Successors&& successors)
 {
+    using N = std::remove_cvref_t<Node>;
     return make_traversal(
-        std::make_optional(std::forward<Node>(root)),
+        std::make_optional(N{std::forward<Node>(root)}),
         std::forward<Successors>(successors)
     );
 }
+
 
 /*****************************
  * traversal transformations *
  *****************************/
 
+namespace walk {
+
+
+/*****************************
+ * traversal adaptors        *
+ *****************************/
+
 template <AnyTraversalConcept T, typename Filter>
-auto prune(T&& t, Filter should_explore) {
+auto prune_if(T&& t, Filter should_explore) {
+    using Traversal = TraversalValue<T>;
+    using Node = typename Traversal::Node;
+    using G = TraversalGenerator<Traversal>;
+
+    Traversal base = std::forward<T>(t);
     return make_traversal(
-        std::forward<T>(t).root,
-        [=,
-            successors     = std::forward<T>(t).successors,
+        std::move(base.root),
+        [
+            successors = std::move(base.successors),
             should_explore = std::move(should_explore)
-        ] (auto& node)
+        ] (Node& node) mutable -> MaybeGenerator<G>
         {
-            using G = TraversalGenerator<T>;
             if (should_explore(node)) {
                 return MaybeGenerator<G>{ successors(node) };
-            } else {
-                return MaybeGenerator<G>{};
             }
+            return MaybeGenerator<G>{};
         }
     );
 }
 
 
 template <AnyTraversalConcept T, typename Filter>
-auto filter(T&& t, Filter should_admit) {
-    using Node = typename T::Node;
+auto exclude_if(T&& t, Filter should_admit) {
+    using Traversal = TraversalValue<T>;
+    using Node = typename Traversal::Node;
+
+    Traversal base = std::forward<T>(t);
+    std::optional<Node> root;
+    if (base.root and should_admit(*base.root)) {
+        // Explicit copy/move boundary: traversal stores node handles by value.
+        root = std::move(*base.root);
+    }
+
     return make_traversal(
-        std::forward<T>(t).root,
-        [=,
-            successors   = std::forward<T>(t).successors,
+        std::move(root),
+        [
+            successors   = std::move(base.successors),
             should_admit = std::move(should_admit)
-        ] (auto& node) -> Generator<Node>
+        ] (Node& node) mutable -> Generator<Node>
         {
             for (auto g = successors(node); g; ++g) {
-                auto n = *g;
-                if (should_admit(n)) {
-                    co_yield n;
+                // Explicit copy/move boundary: successor output is materialized as Node.
+                Node child = *g;
+                if (should_admit(child)) {
+                    co_yield std::move(child);
                 }
             }
         }
@@ -169,59 +212,55 @@ auto filter(T&& t, Filter should_admit) {
 }
 
 
-template <AnyTraversalConcept Traversal, typename Transform>
-auto transform(Traversal&& t, Transform&& xform) {
+template <AnyTraversalConcept T>
+auto reverse_successors(T&& t) {
+    using Traversal = TraversalValue<T>;
     using Node = typename Traversal::Node;
-    using Value = std::remove_cvref_t<std::invoke_result_t<Transform, Node&>>;
-    std::optional<Value> root_value;
-    if (t.root) {
-        auto tmp_root = *std::forward<Traversal>(t).root;
-        root_value = std::make_optional(xform(tmp_root));
-    }
+
+    Traversal base = std::forward<T>(t);
     return make_traversal(
-        std::move(root_value),
-        [=,
-            successors = std::forward<Traversal>(t).successors,
-            xform      = std::forward<Transform>(xform)
-        ]
-            (auto& node) -> Generator<Value>
+        std::move(base.root),
+        [
+            successors = std::move(base.successors)
+        ] (Node& node) mutable -> Generator<Node>
         {
+            // Generic reverse requires buffering children first.
+            std::vector<Node> children;
             for (auto g = successors(node); g; ++g) {
-                co_yield xform(*g);
+                children.emplace_back(*g);
+            }
+            for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                co_yield std::move(*it);
             }
         }
     );
 }
 
 
-template <
-    typename Node,
-    typename Value,
-    TraversalConcept<Node> Trav,
-    std::invocable<std::optional<Value>&, Node&&> Compose,
-    std::invocable<Value&> Get
->
-requires requires (Compose c, Node n) {
-    { c(std::nullopt, std::move(n)) } -> std::convertible_to<std::optional<Value>>;
-}
-auto inductive_transform(Trav&& t, Compose&& make_successor, Get&& get_node) {
+template <AnyTraversalConcept Traversal, typename Transform>
+auto map_nodes(Traversal&& t, Transform&& xform) {
+    using T = TraversalValue<Traversal>;
+    using Node = typename T::Node;
+    // map_nodes owns transformed nodes by value, so reference returns are decayed.
+    using Value = std::remove_cvref_t<std::invoke_result_t<Transform&, Node&>>;
+
+    T base = std::forward<Traversal>(t);
+    std::optional<Value> root_value;
+    if (base.root) {
+        root_value = std::make_optional(xform(*base.root));
+    }
+
     return make_traversal(
-        t.root
-            ? make_successor(std::nullopt, *std::forward<Trav>(t).root)
-            : std::nullopt,
+        std::move(root_value),
         [
-            successors = std::forward<Trav>(t).successors,
-            get_node,
-            make_successor
-        ] (Value& parent) -> Generator<Value> {
-            auto&& parent_node = get_node(parent);
-            for (auto g = successors(parent_node); g; ++g) {
-                auto child = *g;
-                std::optional<Value> value = make_successor(
-                    parent,
-                    std::move(child)
-                );
-                if (value) co_yield std::move(*value);
+            successors = std::move(base.successors),
+            xform      = std::forward<Transform>(xform)
+        ]
+            (Value& node) mutable -> Generator<Value>
+        {
+            for (auto g = successors(node); g; ++g) {
+                auto&& child = *g;
+                co_yield xform(child);
             }
         }
     );
@@ -229,59 +268,58 @@ auto inductive_transform(Trav&& t, Compose&& make_successor, Get&& get_node) {
 
 
 /*****************************
- * traverse functions        *
+ * traversal walkers         *
  *****************************/
 
 namespace detail {
 
 template <typename Node, typename SuccessorGenerator>
-struct StackEntry {
+struct DfsEntry {
     Node               node;
     SuccessorGenerator successors;
 
     template <typename N, typename Successors>
-    StackEntry(N&& n, Successors& successors):
+    DfsEntry(N&& n, Successors& next):
         node(std::forward<N>(n)),
-        successors(successors(node)) {}
+        successors(next(node)) {}
 };
 
-}  // namespace detail
 
-
-template <typename Node, typename Successors>
-Generator<Node> traverse_dfs(
+template <DfsOrder recursion_order, typename Node, typename Successors>
+Generator<Node> dfs(
         std::optional<Node> root,
-        RecursionOrder      recursion_order,
         Successors          successors)
 {
     using SuccessorGenerator = std::remove_cvref_t<
-        std::invoke_result_t<Successors, Node&>
+        std::invoke_result_t<Successors&, Node&>
     >;
-    using StackEntry = detail::StackEntry<Node, SuccessorGenerator>;
+    using StackEntry = DfsEntry<Node, SuccessorGenerator>;
 
     if (not root) co_return;
 
     std::list<StackEntry> stack;
     stack.emplace_back(std::move(*root), successors);
 
-    if (recursion_order == RecursionOrder::ShallowFirst) {
+    if constexpr (recursion_order == DfsOrder::ShallowFirst) {
         co_yield stack.back().node;
     }
 
     while (not stack.empty()) {
         StackEntry& entry = stack.back();
         if (entry.successors) {
-            auto&& next_node = *entry.successors;
-            StackEntry& next = stack.emplace_back(
-                next_node,
+            // Explicit copy/move boundary: child is stored in traversal frame.
+            Node next_node = *entry.successors;
+            ++entry.successors;
+
+            stack.emplace_back(
+                std::move(next_node),
                 successors
             );
-            if (recursion_order == RecursionOrder::ShallowFirst) {
-                co_yield next.node;
+            if constexpr (recursion_order == DfsOrder::ShallowFirst) {
+                co_yield stack.back().node;
             }
-            ++entry.successors;
         } else {
-            if (recursion_order == RecursionOrder::DeepFirst) {
+            if constexpr (recursion_order == DfsOrder::DeepFirst) {
                 co_yield entry.node;
             }
             stack.pop_back();
@@ -290,26 +328,122 @@ Generator<Node> traverse_dfs(
 }
 
 
-template <AnyTraversalConcept T>
-auto traverse_dfs(T&& t, RecursionOrder recursion_order) {
-    return traverse_dfs(
-        std::forward<T>(t).root,
-        recursion_order,
-        std::forward<T>(t).successors
+template <typename Node, typename Successors>
+Generator<Node> bfs(
+        std::optional<Node> root,
+        Successors          successors)
+{
+    if (not root) co_return;
+
+    std::deque<Node> queue;
+    queue.emplace_back(std::move(*root));
+
+    while (not queue.empty()) {
+        Node node = std::move(queue.front());
+        queue.pop_front();
+
+        for (auto g = successors(node); g; ++g) {
+            // Explicit copy/move boundary: queue stores node handles by value.
+            Node child = *g;
+            queue.emplace_back(std::move(child));
+        }
+
+        co_yield std::move(node);
+    }
+}
+
+}  // namespace detail
+
+
+template <
+    DfsOrder recursion_order = DfsOrder::ShallowFirst,
+    AnyTraversalConcept T
+>
+auto dfs(T&& t) {
+    using Traversal = TraversalValue<T>;
+    using Node = typename Traversal::Node;
+
+    Traversal base = std::forward<T>(t);
+    return detail::dfs<recursion_order, Node>(
+        std::move(base.root),
+        std::move(base.successors)
     );
 }
 
 
-template <typename Node, typename Successors>
-Generator<Node> traverse_dfs(
-        Node                 root,
-        RecursionOrder      recursion_order,
-        Successors          successors)
+template <AnyTraversalConcept T>
+auto dfs(
+        T&&            t,
+        DfsOrder recursion_order)
 {
-    return traverse_dfs(
-        std::make_optional(std::move(root)),
-        recursion_order,
-        successors
+    if (recursion_order == DfsOrder::ShallowFirst) {
+        return dfs<DfsOrder::ShallowFirst>(std::forward<T>(t));
+    }
+    return dfs<DfsOrder::DeepFirst>(std::forward<T>(t));
+}
+
+
+template <AnyTraversalConcept T>
+auto bfs(T&& t) {
+    using Traversal = TraversalValue<T>;
+    using Node = typename Traversal::Node;
+
+    Traversal base = std::forward<T>(t);
+    return detail::bfs<Node>(
+        std::move(base.root),
+        std::move(base.successors)
+    );
+}
+
+}  // namespace walk
+
+
+/*****************************
+ * utility transformation    *
+ *****************************/
+
+template <
+    typename Node,
+    typename Value,
+    typename Trav,
+    typename Compose,
+    typename Get
+>
+requires TraversalConcept<Trav, Node>
+      and requires (Compose c, std::optional<Value>& parent, Node n) {
+          { c(parent, std::move(n)) } -> std::convertible_to<std::optional<Value>>;
+      }
+      and std::invocable<Get&, Value&>
+auto inductive_transform(Trav&& t, Compose&& make_successor, Get&& get_node) {
+    using Traversal = TraversalValue<Trav>;
+
+    Traversal base = std::forward<Trav>(t);
+
+    std::optional<Value> root_value;
+    if (base.root) {
+        std::optional<Value> no_parent = std::nullopt;
+        Node root_node = *base.root;
+        root_value = make_successor(no_parent, std::move(root_node));
+    }
+
+    return make_traversal(
+        std::move(root_value),
+        [
+            successors = std::move(base.successors),
+            get_node = std::forward<Get>(get_node),
+            make_successor = std::forward<Compose>(make_successor)
+        ] (Value& parent) mutable -> Generator<Value> {
+            auto&& parent_node = get_node(parent);
+            std::optional<Value> parent_value = parent;
+            for (auto g = successors(parent_node); g; ++g) {
+                Node child = *g;
+                std::optional<Value> value = make_successor(
+                    parent_value,
+                    std::move(child)
+                );
+                if (value) co_yield std::move(*value);
+            }
+        }
     );
 }
 
