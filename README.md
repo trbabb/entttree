@@ -38,7 +38,7 @@ h.set_parent(child, root, position);      // ...at a specific position
 h.order_child_before(child_a, child_b);   // reorder siblings
 
 // traversal
-for (auto g = entttree::walk::dfs(h.traverse(root, SiblingOrder::Forward)); g; ++g) {
+for (auto g = h.traverse_dfs(root, SiblingOrder::Forward, DfsOrder::ShallowFirst); g; ++g) {
     // visit nodes depth-first
 }
 
