@@ -9,6 +9,14 @@ using namespace entttree;
 // hierarchy tags
 struct SceneH {};
 struct CollisionH {};
+struct UiH {};
+
+// optional transform/bounds layer tags
+struct RenderXf {};
+struct PhysicsXf {};
+struct RenderBounds {};
+struct CollisionBounds {};
+struct HitboxBounds {};
 
 
 void test_basic_hierarchy() {
@@ -312,6 +320,159 @@ void test_multiple_hierarchies() {
     assert(collision.parent_of(b) == c);
     assert(scene.child_count(a) == 2);
     assert(collision.child_count(c) == 2);
+
+    std::cout << "ok\n";
+}
+
+void test_default_template_params() {
+    std::cout << "test_default_template_params... ";
+
+    using R2 = Rect<double,2>;
+    using V2 = Vec<double,2>;
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    TransformSystem<SceneH> xf(reg, h); // defaults: double, 2D, transform layer = SceneH
+    BoundsSystem<SceneH> bs(reg, xf);   // defaults: double, 2D, bounds layer = SceneH
+
+    auto root  = reg.create();
+    auto child = reg.create();
+    h.set_parent(child, root);
+    bs.set_intrinsic_bounds(child, R2{V2{0,0}, V2{1,1}});
+
+    auto rb = bs.get_computed_bounds(root);
+    assert(rb.has_value());
+    assert(std::abs(rb->lo[0] - 0.0) < 1e-10);
+    assert(std::abs(rb->hi[0] - 1.0) < 1e-10);
+    assert(std::abs(rb->lo[1] - 0.0) < 1e-10);
+    assert(std::abs(rb->hi[1] - 1.0) < 1e-10);
+
+    std::cout << "ok\n";
+}
+
+
+void test_multiple_transform_layers_on_one_hierarchy() {
+    std::cout << "test_multiple_transform_layers_on_one_hierarchy... ";
+
+    using V2 = Vec<double,2>;
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    TransformSystem<SceneH, double, 2, RenderXf>  render_xf(reg, h);
+    TransformSystem<SceneH, double, 2, PhysicsXf> physics_xf(reg, h);
+
+    auto root  = reg.create();
+    auto child = reg.create();
+    h.set_parent(child, root);
+
+    render_xf.set_transform(child, translation(V2{5.0, 0.0}));
+    physics_xf.set_transform(child, translation(V2{20.0, 0.0}));
+
+    V2 origin{0.0, 0.0};
+    V2 render_world  = render_xf.object_to_world(child) * origin;
+    V2 physics_world = physics_xf.object_to_world(child) * origin;
+
+    assert(std::abs(render_world[0] - 5.0) < 1e-10);
+    assert(std::abs(physics_world[0] - 20.0) < 1e-10);
+    assert((reg.try_get<LocalTransform<SceneH,double,2,RenderXf>>(child) != nullptr));
+    assert((reg.try_get<LocalTransform<SceneH,double,2,PhysicsXf>>(child) != nullptr));
+
+    std::cout << "ok\n";
+}
+
+
+void test_multiple_bounds_layers_on_one_hierarchy() {
+    std::cout << "test_multiple_bounds_layers_on_one_hierarchy... ";
+
+    using R2 = Rect<double,2>;
+    using V2 = Vec<double,2>;
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    TransformSystem<SceneH> xf(reg, h);
+    BoundsSystem<SceneH, double, 2, RenderBounds>    render_bounds(reg, xf);
+    BoundsSystem<SceneH, double, 2, CollisionBounds> collision_bounds(reg, xf);
+    BoundsSystem<SceneH, double, 2, HitboxBounds>    hitbox_bounds(reg, xf);
+
+    auto p1    = reg.create();
+    auto p2    = reg.create();
+    auto child = reg.create();
+    h.set_parent(child, p1);
+    xf.set_transform(child, translation(V2{0.0, 0.0}));
+
+    render_bounds.set_intrinsic_bounds(child,    R2{V2{ 0, 0}, V2{ 1, 1}});
+    collision_bounds.set_intrinsic_bounds(child, R2{V2{10, 0}, V2{12, 1}});
+    hitbox_bounds.set_intrinsic_bounds(child,    R2{V2{-1,-1}, V2{ 2, 2}});
+
+    auto r1 = render_bounds.get_computed_bounds(p1);
+    auto c1 = collision_bounds.get_computed_bounds(p1);
+    auto h1 = hitbox_bounds.get_computed_bounds(p1);
+    assert(r1.has_value() && c1.has_value() && h1.has_value());
+    assert(std::abs(r1->lo[0] - 0.0) < 1e-10 && std::abs(r1->hi[0] - 1.0) < 1e-10);
+    assert(std::abs(c1->lo[0] - 10.0) < 1e-10 && std::abs(c1->hi[0] - 12.0) < 1e-10);
+    assert(std::abs(h1->lo[0] + 1.0) < 1e-10 && std::abs(h1->hi[0] - 2.0) < 1e-10);
+
+    h.set_parent(child, p2);
+    assert(!render_bounds.get_computed_bounds(p1).has_value());
+    assert(!collision_bounds.get_computed_bounds(p1).has_value());
+    assert(!hitbox_bounds.get_computed_bounds(p1).has_value());
+    assert(render_bounds.get_computed_bounds(p2).has_value());
+    assert(collision_bounds.get_computed_bounds(p2).has_value());
+    assert(hitbox_bounds.get_computed_bounds(p2).has_value());
+
+    xf.set_transform(child, translation(V2{100.0, 0.0}));
+
+    auto r2 = render_bounds.get_computed_bounds(p2);
+    auto c2 = collision_bounds.get_computed_bounds(p2);
+    auto h2 = hitbox_bounds.get_computed_bounds(p2);
+    assert(r2.has_value() && c2.has_value() && h2.has_value());
+    assert(std::abs(r2->lo[0] - 100.0) < 1e-10 && std::abs(r2->hi[0] - 101.0) < 1e-10);
+    assert(std::abs(c2->lo[0] - 110.0) < 1e-10 && std::abs(c2->hi[0] - 112.0) < 1e-10);
+    assert(std::abs(h2->lo[0] - 99.0)  < 1e-10 && std::abs(h2->hi[0] - 102.0) < 1e-10);
+
+    std::cout << "ok\n";
+}
+
+
+void test_separate_hierarchies_are_independent_with_layers() {
+    std::cout << "test_separate_hierarchies_are_independent_with_layers... ";
+
+    using R2 = Rect<double,2>;
+    using V2 = Vec<double,2>;
+
+    entt::registry reg;
+    HierarchySystem<SceneH> scene_h(reg);
+    HierarchySystem<UiH> ui_h(reg);
+
+    TransformSystem<SceneH, double, 2, RenderXf> scene_xf(reg, scene_h);
+    TransformSystem<UiH, double, 2, RenderXf>    ui_xf(reg, ui_h);
+
+    BoundsSystem<SceneH, double, 2, RenderBounds, RenderXf> scene_bounds(reg, scene_xf);
+    BoundsSystem<UiH, double, 2, RenderBounds, RenderXf>    ui_bounds(reg, ui_xf);
+
+    auto scene_root  = reg.create();
+    auto scene_child = reg.create();
+    auto ui_root     = reg.create();
+    auto ui_child    = reg.create();
+
+    scene_h.set_parent(scene_child, scene_root);
+    ui_h.set_parent(ui_child, ui_root);
+
+    scene_bounds.set_intrinsic_bounds(scene_child, R2{V2{0,0}, V2{10,10}});
+    auto scene_rb = scene_bounds.get_computed_bounds(scene_root);
+    assert(scene_rb.has_value());
+    assert(!ui_bounds.get_computed_bounds(ui_root).has_value());
+
+    ui_bounds.set_intrinsic_bounds(ui_child, R2{V2{50,50}, V2{60,60}});
+    auto ui_rb = ui_bounds.get_computed_bounds(ui_root);
+    assert(ui_rb.has_value());
+
+    // mutating UI hierarchy should not affect scene bounds
+    ui_h.unparent(ui_child);
+    assert(!ui_bounds.get_computed_bounds(ui_root).has_value());
+    scene_rb = scene_bounds.get_computed_bounds(scene_root);
+    assert(scene_rb.has_value());
+    assert(std::abs(scene_rb->hi[0] - 10.0) < 1e-10);
 
     std::cout << "ok\n";
 }
@@ -651,6 +812,71 @@ void test_bounds_dirty_after_transform_change() {
     std::cout << "ok\n";
 }
 
+void test_bounds_dirty_after_transform_set() {
+    std::cout << "test_bounds_dirty_after_transform_set... ";
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    TransformSystem<SceneH, double, 2> xf(reg, h);
+    BoundsSystem<SceneH, double, 2> bs(reg, xf);
+
+    auto root  = reg.create();
+    auto child = reg.create();
+    h.set_parent(child, root);
+
+    bs.set_intrinsic_bounds(child, R2{V2{0,0}, V2{1,1}});
+
+    // build and cache baseline without transform
+    auto rb = bs.get_computed_bounds(root);
+    assert(rb.has_value());
+    assert(std::abs(rb->lo[0] - 0.0) < 1e-10);
+    assert(std::abs(rb->hi[0] - 1.0) < 1e-10);
+
+    // setting an initial transform should dirty ancestors
+    xf.set_transform(child, translation(V2{10.0, 0.0}));
+
+    rb = bs.get_computed_bounds(root);
+    assert(rb.has_value());
+    assert(std::abs(rb->lo[0] - 10.0) < 1e-10);
+    assert(std::abs(rb->hi[0] - 11.0) < 1e-10);
+
+    std::cout << "ok\n";
+}
+
+
+void test_bounds_dirty_after_transform_remove() {
+    std::cout << "test_bounds_dirty_after_transform_remove... ";
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+    TransformSystem<SceneH, double, 2> xf(reg, h);
+    BoundsSystem<SceneH, double, 2> bs(reg, xf);
+
+    auto root  = reg.create();
+    auto child = reg.create();
+    h.set_parent(child, root);
+
+    bs.set_intrinsic_bounds(child, R2{V2{0,0}, V2{1,1}});
+    xf.set_transform(child, translation(V2{10.0, 0.0}));
+
+    // build and cache transformed bounds
+    auto rb = bs.get_computed_bounds(root);
+    assert(rb.has_value());
+    assert(std::abs(rb->lo[0] - 10.0) < 1e-10);
+    assert(std::abs(rb->hi[0] - 11.0) < 1e-10);
+
+    // removing transform should dirty ancestors
+    auto removed = xf.remove_transform(child);
+    assert(removed.has_value());
+
+    rb = bs.get_computed_bounds(root);
+    assert(rb.has_value());
+    assert(std::abs(rb->lo[0] - 0.0) < 1e-10);
+    assert(std::abs(rb->hi[0] - 1.0) < 1e-10);
+
+    std::cout << "ok\n";
+}
+
 
 void test_bounds_deep_hierarchy() {
     std::cout << "test_bounds_deep_hierarchy... ";
@@ -844,6 +1070,10 @@ int main() {
     test_traversal_adaptors_and_walkers();
     test_dca_and_path();
     test_multiple_hierarchies();
+    test_default_template_params();
+    test_multiple_transform_layers_on_one_hierarchy();
+    test_multiple_bounds_layers_on_one_hierarchy();
+    test_separate_hierarchies_are_independent_with_layers();
     test_transforms();
     test_transform_traversal_functions();
 
@@ -855,6 +1085,8 @@ int main() {
     test_bounds_dirty_after_unparent();
     test_bounds_dirty_after_add_child();
     test_bounds_dirty_after_transform_change();
+    test_bounds_dirty_after_transform_set();
+    test_bounds_dirty_after_transform_remove();
     test_bounds_deep_hierarchy();
     test_bounds_intrinsic_change();
     test_bounds_parent_and_child_intrinsic();

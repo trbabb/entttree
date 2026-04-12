@@ -2,6 +2,8 @@
 
 A C++20 library for hierarchical entity management built on [EnTT](https://github.com/skypjack/entt). Provides type-tagged parent-child hierarchies, affine transform propagation, and hierarchical bounding volumes with lazy bound recomputation.
 
+The hierarchy structure is defined by a single per-entity component `ParentConnection` associated with each node. The component names its parent entity and encodes the child's position among its siblings using a fractional index. All other information is derived efficiently from the `entity : ParentConnection` mapping, and all changes to the graph structure can be written as updates to that one component.
+
 Multiple independent hierarchies can coexist on the same entities using compile-time tag types:
 
 ```cpp
@@ -12,6 +14,8 @@ entt::registry reg;
 entttree::HierarchySystem<RenderH>    scene(reg);
 entttree::HierarchySystem<CollisionH> collision(reg);
 ```
+
+Transform and bounds layers are also independently taggable per hierarchy (with defaults), so one hierarchy can host multiple overlays such as render/collision/hitbox bounds.
 
 ## Documentation
 
@@ -49,7 +53,7 @@ entt::sink{h.on_changed}.connect<[] (entt::entity child, ParentConnection<Render
 Layers affine transforms on a hierarchy. Nodes without an explicit transform use the identity.
 
 ```cpp
-entttree::TransformSystem<RenderH, double, 2> xf(reg, h);
+entttree::TransformSystem<RenderH> xf(reg, h);  // defaults: double, 2D, layer tag = RenderH
 
 xf.set_transform(child, AffineTransform<double,2>::translation({5, 0}));
 
@@ -57,12 +61,22 @@ auto world = xf.object_to_world(child);   // accumulated transform to root
 auto rel   = xf.xf_between(node_a, node_b);
 ```
 
+To maintain multiple transform overlays on one hierarchy:
+
+```cpp
+struct RenderXf {};
+struct PhysicsXf {};
+
+entttree::TransformSystem<RenderH, double, 2, RenderXf>  render_xf(reg, h);
+entttree::TransformSystem<RenderH, double, 2, PhysicsXf> physics_xf(reg, h);
+```
+
 ### BoundsSystem
 
 Maintains hierarchical bounding boxes. Computed bounds are the union of a node's intrinsic bounds and its children's bounds (in parent space). Listens to hierarchy and transform signals for automatic dirty propagation.
 
 ```cpp
-entttree::BoundsSystem<RenderH, double, 2> bs(reg, xf);
+entttree::BoundsSystem<RenderH> bs(reg, xf);  // defaults: double, 2D, bounds layer = RenderH
 
 bs.set_intrinsic_bounds(entity, Rect<double,2>{{0,0}, {10,10}});
 
@@ -72,6 +86,18 @@ auto bounds = bs.get_computed_bounds(entity);  // recomputes if dirty
 for (auto g = bs.search_under_point(root, fwd, shallow_first, point); g; ++g) {
     // nodes whose intrinsic bounds contain the point
 }
+```
+
+Multiple bounds overlays on one hierarchy can share the same transform system:
+
+```cpp
+struct RenderBounds {};
+struct CollisionBounds {};
+struct HitboxBounds {};
+
+entttree::BoundsSystem<RenderH, double, 2, RenderBounds>    render_bounds(reg, xf);
+entttree::BoundsSystem<RenderH, double, 2, CollisionBounds> collision_bounds(reg, xf);
+entttree::BoundsSystem<RenderH, double, 2, HitboxBounds>    hitbox_bounds(reg, xf);
 ```
 
 ## Traversal framework

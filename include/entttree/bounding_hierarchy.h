@@ -31,15 +31,22 @@ namespace entttree {
  * @tparam HTag Hierarchy tag type.
  * @tparam T    Scalar type (e.g. `double`).
  * @tparam N    Spatial dimension (e.g. 2 or 3).
+ * @tparam BTag Optional bounds-layer tag. Defaults to HTag.
+ * @tparam XTag Transform-layer tag to observe. Defaults to HTag.
  */
-template <typename HTag, typename T, size_t N>
+template <
+    typename HTag,
+    typename T=double,
+    size_t N=2,
+    typename BTag=HTag,
+    typename XTag=HTag>
 struct BoundsSystem {
 
     using xfn    = AffineTransform<T,N>;
     using vecn   = Vec<T,N>;
     using rangen = Rect<T,N>;
     using rayn   = Ray<T,N>;
-    using IB     = IntrinsicBounds<HTag,T,N>;
+    using IB     = IntrinsicBounds<HTag,T,N,BTag>;
 
     /****************************
      * Typed signals
@@ -58,7 +65,7 @@ struct BoundsSystem {
 
     BoundsSystem(
             entt::registry& reg,
-            TransformSystem<HTag,T,N>& transforms):
+            TransformSystem<HTag,T,N,XTag>& transforms):
         _reg(reg),
         _transforms(transforms)
     {
@@ -70,15 +77,19 @@ struct BoundsSystem {
         _conn_changed = entt::sink{_transforms.hierarchy().on_changed}
             .template connect<&BoundsSystem::_on_reparent>(*this);
 
-        // listen for transform changes to dirty bounds
-        _conn_xf = entt::sink{_transforms.on_transform_changed}
+        // listen for transform edits to dirty bounds
+        _conn_xf_set = entt::sink{_transforms.on_transform_set}
+            .template connect<&BoundsSystem::_on_transform_set>(*this);
+        _conn_xf_removed = entt::sink{_transforms.on_transform_removed}
+            .template connect<&BoundsSystem::_on_transform_removed>(*this);
+        _conn_xf_changed = entt::sink{_transforms.on_transform_changed}
             .template connect<&BoundsSystem::_on_transform_changed>(*this);
     }
 
     BoundsSystem(const BoundsSystem&) = delete;
     BoundsSystem& operator=(const BoundsSystem&) = delete;
 
-    TransformSystem<HTag,T,N>& transform_system() { return _transforms; }
+    TransformSystem<HTag,T,N,XTag>& transform_system() { return _transforms; }
     HierarchySystem<HTag>& hierarchy() { return _transforms.hierarchy(); }
 
     /****************************
@@ -320,7 +331,7 @@ struct BoundsSystem {
 private:
 
     entt::registry& _reg;
-    TransformSystem<HTag,T,N>& _transforms;
+    TransformSystem<HTag,T,N,XTag>& _transforms;
 
     DenseSet<entt::entity> _dirty;
     DenseMap<entt::entity, rangen> _computed;
@@ -329,7 +340,9 @@ private:
     entt::scoped_connection _conn_added;
     entt::scoped_connection _conn_removed;
     entt::scoped_connection _conn_changed;
-    entt::scoped_connection _conn_xf;
+    entt::scoped_connection _conn_xf_set;
+    entt::scoped_connection _conn_xf_removed;
+    entt::scoped_connection _conn_xf_changed;
 
 
     void _dirty_ancestors(entt::entity eid) {
@@ -411,8 +424,20 @@ private:
         }
     }
 
+    void _on_transform_set(entt::entity eid, xfn new_xf) {
+        _dirty_parent_after_transform_edit(eid);
+    }
+
+    void _on_transform_removed(entt::entity eid, xfn old_xf) {
+        _dirty_parent_after_transform_edit(eid);
+    }
+
     void _on_transform_changed(entt::entity eid, xfn old_xf, xfn new_xf) {
-        // transform changed => parent's computed bounds are stale
+        _dirty_parent_after_transform_edit(eid);
+    }
+
+    void _dirty_parent_after_transform_edit(entt::entity eid) {
+        // child-to-parent transform edit => parent's computed bounds are stale
         entt::entity parent = _transforms.hierarchy().parent_of(eid);
         if (parent != entt::null) {
             _dirty_ancestors(parent);
@@ -422,11 +447,11 @@ private:
 };
 
 
-template <typename HTag>
-using BoundsSystem2d = BoundsSystem<HTag, double, 2>;
+template <typename HTag, typename BTag=HTag, typename XTag=HTag>
+using BoundsSystem2d = BoundsSystem<HTag, double, 2, BTag, XTag>;
 
-template <typename HTag>
-using BoundsSystem3d = BoundsSystem<HTag, double, 3>;
+template <typename HTag, typename BTag=HTag, typename XTag=HTag>
+using BoundsSystem3d = BoundsSystem<HTag, double, 3, BTag, XTag>;
 
 
 } // namespace entttree

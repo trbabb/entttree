@@ -22,23 +22,24 @@ namespace entttree {
  * @tparam HTag Hierarchy tag type.
  * @tparam T    Scalar type (e.g. `double`).
  * @tparam N    Spatial dimension (e.g. 2 or 3).
+ * @tparam XTag Optional transform-layer tag. Defaults to HTag.
  */
-template <typename HTag, typename T, size_t N>
+template <typename HTag, typename T=double, size_t N=2, typename XTag=HTag>
 struct TransformSystem {
 
     using xfn = AffineTransform<T,N>;
-    using LT  = LocalTransform<HTag,T,N>;
+    using LT  = LocalTransform<HTag,T,N,XTag>;
 
     /****************************
      * Typed signals
      ****************************/
 
     /// Emitted when a transform is first set on an entity. Args: (entity, new_xf).
-    entt::sigh<void(entt::entity, xfn)>            on_transform_set;
+    entt::sigh<void(entt::entity, xfn)>      on_transform_set;
     /// Emitted when a transform is removed from an entity. Args: (entity, old_xf).
-    entt::sigh<void(entt::entity, xfn)>            on_transform_removed;
+    entt::sigh<void(entt::entity, xfn)>      on_transform_removed;
     /// Emitted when an existing transform changes. Args: (entity, old_xf, new_xf).
-    entt::sigh<void(entt::entity, xfn, xfn)>       on_transform_changed;
+    entt::sigh<void(entt::entity, xfn, xfn)> on_transform_changed;
 
     /****************************
      * Construction
@@ -211,11 +212,11 @@ private:
 };
 
 
-template <typename HTag>
-using TransformSystem2d = TransformSystem<HTag, double, 2>;
+template <typename HTag, typename XTag=HTag>
+using TransformSystem2d = TransformSystem<HTag, double, 2, XTag>;
 
-template <typename HTag>
-using TransformSystem3d = TransformSystem<HTag, double, 3>;
+template <typename HTag, typename XTag=HTag>
+using TransformSystem3d = TransformSystem<HTag, double, 3, XTag>;
 
 
 } // namespace entttree

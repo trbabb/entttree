@@ -53,8 +53,9 @@ struct ParentConnection {
  * @tparam HTag Tag type identifying the hierarchy.
  * @tparam T    Scalar type (e.g. `double`).
  * @tparam N    Spatial dimension (e.g. 2 or 3).
+ * @tparam XTag Optional transform-layer tag. Defaults to HTag.
  */
-template <typename HTag, typename T, size_t N>
+template <typename HTag, typename T, size_t N, typename XTag=HTag>
 struct LocalTransform {
     AffineTransform<T,N> child_to_parent;  ///< Transform from this node's space to its parent's.
 
@@ -72,8 +73,9 @@ struct LocalTransform {
  * @tparam HTag Tag type identifying the hierarchy.
  * @tparam T    Scalar type.
  * @tparam N    Spatial dimension.
+ * @tparam BTag Optional bounds-layer tag. Defaults to HTag.
  */
-template <typename HTag, typename T, size_t N>
+template <typename HTag, typename T, size_t N, typename BTag=HTag>
 struct IntrinsicBounds {
     Rect<T,N> bounds;  ///< Axis-aligned bounding box in local coordinates.
 
