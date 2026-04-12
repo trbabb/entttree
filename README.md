@@ -15,7 +15,7 @@ entttree::HierarchySystem<CollisionH> collision(reg);
 
 ## Documentation
 
-[API Reference](https://tbabb.github.io/entttree/)
+[API Reference](https://trbabb.github.io/entttree/)
 
 ## Systems
 
