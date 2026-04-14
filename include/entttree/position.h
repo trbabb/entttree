@@ -89,6 +89,17 @@ public:
 
     /// @brief Return a position immediately after this one.
     Position after()  const;
+
+    /// @brief Number of symbols in the fractional-index representation.
+    size_t byte_count() const { return _size; }
+
+    /// @brief Read-only pointer to the raw symbol bytes (big-endian, high-order first).
+    const symbol_t* bytes() const { return _data(); }
+
+    /// @brief Construct a Position from raw symbol bytes.
+    /// @param data Pointer to symbol bytes (big-endian, high-order first).
+    /// @param count Number of symbols. Must be >= 1.
+    static Position from_bytes(const symbol_t* data, size_t count);
 };
 
 } // namespace entttree

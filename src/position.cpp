@@ -205,6 +205,13 @@ Position Position::between(const Position& other) const {
     return result;
 }
 
+Position Position::from_bytes(const symbol_t* data, size_t count) {
+    if (count == 0) return Position();  // fallback to midpoint
+    Position result(count);
+    std::copy(data, data + count, result._data());
+    return result;
+}
+
 } // namespace entttree
 
 
