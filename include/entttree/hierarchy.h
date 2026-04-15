@@ -293,9 +293,7 @@ struct HierarchySystem {
 
     /// The number of non-root nodes in the hierarchy (i.e. entities with a parent).
     size_t size() const {
-        return _reg.template storage<PC>()
-            ? _reg.template storage<PC>()->size()
-            : 0;
+        return _reg.template view<const PC>().size();
     }
 
     /// Returns the parent of `node`, or `entt::null` if the node is a root or not in the hierarchy.

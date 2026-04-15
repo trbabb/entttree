@@ -1436,17 +1436,18 @@ void test_stochastic_reparent() {
             }
         }
 
-        // verify total child count across all parents matches parented count
+        // verify hierarchy size and child counts agree
         size_t parented = 0;
         size_t total_children = 0;
         for (int i = 0; i < N_NODES; ++i) {
             if (h.parent_of(nodes[i]) != entt::null) ++parented;
             total_children += h.child_count(nodes[i]);
         }
-        if (total_children != parented) {
+        if (total_children != parented or h.size() != parented) {
             std::cerr << "FAIL (seed=" << seed << ", iter=" << iter << "): "
-                      << "total children " << total_children
-                      << " != parented count " << parented << "\n";
+                      << "size mismatch: h.size()=" << h.size()
+                      << " total_children=" << total_children
+                      << " parented=" << parented << "\n";
             assert(false);
         }
     }
