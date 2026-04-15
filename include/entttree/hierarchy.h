@@ -214,6 +214,9 @@ struct HierarchySystem {
 
     /**
      * @brief Move a child to the position before a sibling.
+     * 
+     * The sibling must belong to the same parent; if it doesn't, the child is moved to the end
+     * of its parent.
      *
      * Returns the new position if changed, nullopt otherwise.
      */
