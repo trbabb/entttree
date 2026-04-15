@@ -197,9 +197,9 @@ Position Position::between(const Position& other) const {
             if (i <= (int) sz_a) a |= (data_a[i - 1] & 1) << (SYMBOL_BITS - 1);
             if (i <= (int) sz_b) b |= (data_b[i - 1] & 1) << (SYMBOL_BITS - 1);
         }
-        symbol_t sum = a + b + carry;
-        result_data[i] = sum;
-        carry = sum < a;
+        uint16_t wide = (uint16_t)a + b + carry;
+        result_data[i] = (symbol_t)wide;
+        carry = wide >> SYMBOL_BITS;
     }
 
     return result;
