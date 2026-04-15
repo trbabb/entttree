@@ -115,7 +115,8 @@ struct HierarchySystem {
             );
             src->position = *position;
             if (dst != src) {
-                if (maybe_dupe) _dedupe_position(children, src->position, dst);
+                bool duped = maybe_dupe
+                    and _dedupe_position(children, src->position, dst);
                 if (dst < src) {
                     std::rotate(dst, src, src + 1);
                     src = dst;
@@ -123,9 +124,10 @@ struct HierarchySystem {
                     std::rotate(src, src + 1, dst);
                     src = dst - 1;
                 }
+                if (duped) {
+                    _reg.get<PC>(child).position = src->position;
+                }
             }
-            // sync the component in case dedupe changed the position
-            _reg.get<PC>(child).position = src->position;
         } else {
             if (old_val) {
                 // remove from old parent's child list.

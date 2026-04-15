@@ -1290,10 +1290,176 @@ void test_stochastic_reorder() {
 }
 
 
+void test_stochastic_reparent() {
+    std::cout << "test_stochastic_reparent... ";
+
+    constexpr int N_NODES = 15;
+    constexpr int N_ITERS = 500;
+
+    uint64_t seed = std::random_device{}();
+    std::mt19937_64 rng(seed);
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+
+    // create a pool of entities; initially a flat forest (no parents)
+    std::vector<entt::entity> nodes;
+    for (int i = 0; i < N_NODES; ++i) {
+        nodes.push_back(reg.create());
+    }
+
+    // build a random initial tree rooted at nodes[0]
+    for (int i = 1; i < N_NODES; ++i) {
+        std::uniform_int_distribution<int> parent_dist(0, i - 1);
+        h.set_parent(nodes[i], nodes[parent_dist(rng)]);
+    }
+
+    std::uniform_int_distribution<int> node_dist(0, N_NODES - 1);
+    std::uniform_int_distribution<int> op_dist(0, 3);
+
+    for (int iter = 0; iter < N_ITERS; ++iter) {
+        int op = op_dist(rng);
+        int ci = node_dist(rng);
+        int pi = node_dist(rng);
+
+        switch (op) {
+        case 0:
+        case 1: {
+            // reparent: move nodes[ci] under nodes[pi]
+            // skip if it would create a cycle (ci == pi, or pi is a descendant of ci)
+            if (ci != pi
+                and not h.is_ancestor_of(nodes[ci], nodes[pi])
+                and nodes[ci] != nodes[pi])
+            {
+                h.set_parent(nodes[ci], nodes[pi]);
+            }
+            break;
+        }
+        case 2: {
+            // unparent a non-root node, then re-attach under a random node
+            if (h.parent_of(nodes[ci]) != entt::null) {
+                h.unparent(nodes[ci]);
+                // re-attach under a random node (avoiding cycles)
+                int new_pi = node_dist(rng);
+                if (new_pi == ci) new_pi = (new_pi + 1) % N_NODES;
+                // after unparenting, ci could still be an ancestor of new_pi
+                // via ci's own subtree
+                if (not h.is_ancestor_of(nodes[ci], nodes[new_pi])) {
+                    h.set_parent(nodes[ci], nodes[new_pi]);
+                } else {
+                    // can't attach there; just re-root it under any safe node
+                    for (int k = 0; k < N_NODES; ++k) {
+                        if (k != ci and not h.is_ancestor_of(nodes[ci], nodes[k])) {
+                            h.set_parent(nodes[ci], nodes[k]);
+                            break;
+                        }
+                    }
+                }
+            }
+            break;
+        }
+        case 3: {
+            // reparent with explicit position
+            if (ci != pi
+                and not h.is_ancestor_of(nodes[ci], nodes[pi])
+                and nodes[ci] != nodes[pi])
+            {
+                auto last = h.last_child_position(nodes[pi]);
+                Position pos = last ? last->after() : Position{};
+                h.set_parent(nodes[ci], nodes[pi], pos);
+            }
+            break;
+        }
+        }
+
+        // verify no cycles: for every node, walking up the parent chain
+        // must terminate and never revisit a node
+        for (int i = 0; i < N_NODES; ++i) {
+            std::set<entt::entity> visited;
+            entt::entity cur = nodes[i];
+            while (cur != entt::null) {
+                if (not visited.insert(cur).second) {
+                    std::cerr << "FAIL (seed=" << seed << ", iter=" << iter << "): "
+                              << "cycle detected involving entity "
+                              << (uint32_t)cur << "\n";
+                    assert(false);
+                }
+                cur = h.parent_of(cur);
+            }
+        }
+
+        // verify child list consistency for every node that has children
+        for (int i = 0; i < N_NODES; ++i) {
+            size_t count = h.child_count(nodes[i]);
+            if (count == 0) continue;
+
+            // collect children and check sorted + unique
+            std::vector<entt::entity> kids;
+            std::optional<Position> prev_pos;
+            for (auto g = h.children(nodes[i], SiblingOrder::Forward); g; ++g) {
+                if (prev_pos) {
+                    if (g->position <= *prev_pos) {
+                        std::cerr << "FAIL (seed=" << seed << ", iter=" << iter << "): "
+                                  << "children not sorted under entity "
+                                  << (uint32_t)nodes[i] << "\n";
+                        assert(false);
+                    }
+                }
+                prev_pos = g->position;
+
+                // verify component matches entry
+                auto comp = h.position_of(g->node_id);
+                assert(comp.has_value());
+                if (*comp != g->position) {
+                    std::cerr << "FAIL (seed=" << seed << ", iter=" << iter << "): "
+                              << "entry/component position mismatch\n";
+                    assert(false);
+                }
+
+                // verify parent pointer
+                if (h.parent_of(g->node_id) != nodes[i]) {
+                    std::cerr << "FAIL (seed=" << seed << ", iter=" << iter << "): "
+                              << "child has wrong parent\n";
+                    assert(false);
+                }
+
+                kids.push_back(g->node_id);
+            }
+
+            // no duplicates
+            std::set<entt::entity> kid_set(kids.begin(), kids.end());
+            if (kid_set.size() != kids.size()) {
+                std::cerr << "FAIL (seed=" << seed << ", iter=" << iter << "): "
+                          << "duplicate child under entity "
+                          << (uint32_t)nodes[i] << "\n";
+                assert(false);
+            }
+        }
+
+        // verify total child count across all parents matches parented count
+        size_t parented = 0;
+        size_t total_children = 0;
+        for (int i = 0; i < N_NODES; ++i) {
+            if (h.parent_of(nodes[i]) != entt::null) ++parented;
+            total_children += h.child_count(nodes[i]);
+        }
+        if (total_children != parented) {
+            std::cerr << "FAIL (seed=" << seed << ", iter=" << iter << "): "
+                      << "total children " << total_children
+                      << " != parented count " << parented << "\n";
+            assert(false);
+        }
+    }
+
+    std::cout << "ok (seed=" << seed << ")\n";
+}
+
+
 int main() {
     test_basic_hierarchy();
     test_multiple_children_ordering();
     test_stochastic_reorder();
+    test_stochastic_reparent();
     test_reparenting();
     test_unparent();
     test_signals();
