@@ -1,5 +1,7 @@
 #include <cassert>
 #include <iostream>
+#include <random>
+#include <set>
 #include <vector>
 
 #include <entttree/bounding_hierarchy.h>
@@ -1127,9 +1129,171 @@ void test_bounds_traversal_functions() {
 }
 
 
+void verify_child_list_integrity(
+        HierarchySystem<SceneH>& h,
+        entt::registry& reg,
+        entt::entity parent,
+        const std::vector<entt::entity>& expected_children,
+        uint64_t seed,
+        int iteration)
+{
+    // collect children from the hierarchy
+    std::vector<entt::entity> actual;
+    for (auto g = h.children(parent, SiblingOrder::Forward); g; ++g) {
+        actual.push_back(g->node_id);
+    }
+
+    // 1. child count unchanged
+    if (actual.size() != expected_children.size()) {
+        std::cerr << "FAIL (seed=" << seed << ", iter=" << iteration << "): "
+                  << "expected " << expected_children.size() << " children, got "
+                  << actual.size() << "\n";
+        assert(false);
+    }
+
+    // 2. each expected child appears exactly once
+    std::set<entt::entity> actual_set(actual.begin(), actual.end());
+    if (actual_set.size() != actual.size()) {
+        std::cerr << "FAIL (seed=" << seed << ", iter=" << iteration << "): "
+                  << "duplicate child in child list\n";
+        assert(false);
+    }
+    for (auto e : expected_children) {
+        if (actual_set.find(e) == actual_set.end()) {
+            std::cerr << "FAIL (seed=" << seed << ", iter=" << iteration << "): "
+                      << "missing child in child list\n";
+            assert(false);
+        }
+    }
+
+    // 3. children are sorted by position
+    std::optional<Position> prev_pos;
+    for (auto g = h.children(parent, SiblingOrder::Forward); g; ++g) {
+        if (prev_pos) {
+            if (g->position <= *prev_pos) {
+                std::cerr << "FAIL (seed=" << seed << ", iter=" << iteration << "): "
+                          << "children not sorted by position\n";
+                assert(false);
+            }
+        }
+        prev_pos = g->position;
+    }
+
+    // 4. each child's iterated position matches its component position
+    for (auto g = h.children(parent, SiblingOrder::Forward); g; ++g) {
+        auto comp_pos = h.position_of(g->node_id);
+        assert(comp_pos.has_value());
+        if (*comp_pos != g->position) {
+            std::cerr << "FAIL (seed=" << seed << ", iter=" << iteration << "): "
+                      << "child entry position != component position\n";
+            assert(false);
+        }
+    }
+
+    // 5. each child's parent is correct
+    for (auto e : actual) {
+        if (h.parent_of(e) != parent) {
+            std::cerr << "FAIL (seed=" << seed << ", iter=" << iteration << "): "
+                      << "child has wrong parent\n";
+            assert(false);
+        }
+    }
+}
+
+
+void test_stochastic_reorder() {
+    std::cout << "test_stochastic_reorder... ";
+
+    constexpr int N_CHILDREN  = 10;
+    constexpr int N_ITERS     = 500;
+
+    uint64_t seed = std::random_device{}();
+    std::mt19937_64 rng(seed);
+
+    entt::registry reg;
+    HierarchySystem<SceneH> h(reg);
+
+    auto root = reg.create();
+    std::vector<entt::entity> kids;
+    for (int i = 0; i < N_CHILDREN; ++i) {
+        auto e = reg.create();
+        h.set_parent(e, root);
+        kids.push_back(e);
+    }
+
+    std::uniform_int_distribution<int> child_dist(0, N_CHILDREN - 1);
+    std::uniform_int_distribution<int> op_dist(0, 2);
+
+    for (int iter = 0; iter < N_ITERS; ++iter) {
+        int op = op_dist(rng);
+        int ci = child_dist(rng);
+        int si = child_dist(rng);
+
+        switch (op) {
+        case 0: {
+            // order_child_before: move kids[ci] before kids[si]
+            if (ci != si) {
+                h.order_child_before(kids[ci], kids[si]);
+            }
+            break;
+        }
+        case 1: {
+            // set_child_position: move kids[ci] to a random position
+            // generate a position between existing children or at extremes
+            auto last_pos = h.last_child_position(root);
+            Position new_pos;
+            if (last_pos) {
+                // pick randomly: before first, after last, or between two
+                std::uniform_int_distribution<int> pos_choice(0, 2);
+                switch (pos_choice(rng)) {
+                case 0: {
+                    // before first child
+                    auto g = h.children(root, SiblingOrder::Forward);
+                    new_pos = g->position.before();
+                    break;
+                }
+                case 1:
+                    // after last child
+                    new_pos = last_pos->after();
+                    break;
+                case 2: {
+                    // between two random children
+                    std::vector<Position> positions;
+                    for (auto g = h.children(root, SiblingOrder::Forward); g; ++g) {
+                        positions.push_back(g->position);
+                    }
+                    std::uniform_int_distribution<int> pi(0, (int)positions.size() - 2);
+                    int idx = pi(rng);
+                    new_pos = positions[idx].between(positions[idx + 1]);
+                    break;
+                }
+                }
+            } else {
+                new_pos = Position{};
+            }
+            h.set_child_position(kids[ci], new_pos);
+            break;
+        }
+        case 2: {
+            // set_parent with same parent (reorder via set_parent)
+            auto last_pos = h.last_child_position(root);
+            Position new_pos = last_pos ? last_pos->after() : Position{};
+            h.set_parent(kids[ci], root, new_pos);
+            break;
+        }
+        }
+
+        verify_child_list_integrity(h, reg, root, kids, seed, iter);
+    }
+
+    std::cout << "ok (seed=" << seed << ")\n";
+}
+
+
 int main() {
     test_basic_hierarchy();
     test_multiple_children_ordering();
+    test_stochastic_reorder();
     test_reparenting();
     test_unparent();
     test_signals();

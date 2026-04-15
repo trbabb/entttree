@@ -113,15 +113,19 @@ struct HierarchySystem {
             auto dst = std::ranges::lower_bound(
                 children, *position, std::ranges::less{}, &ChildEntry::position
             );
+            src->position = *position;
             if (dst != src) {
-                src->position = *position;
                 if (maybe_dupe) _dedupe_position(children, src->position, dst);
                 if (dst < src) {
                     std::rotate(dst, src, src + 1);
+                    src = dst;
                 } else {
-                    std::rotate(src, src + 1, std::min(children.end(), dst + 1));
+                    std::rotate(src, src + 1, dst);
+                    src = dst - 1;
                 }
             }
+            // sync the component in case dedupe changed the position
+            _reg.get<PC>(child).position = src->position;
         } else {
             if (old_val) {
                 // remove from old parent's child list.
@@ -200,10 +204,13 @@ struct HierarchySystem {
         if (new_loc != old_loc) {
             if (new_loc < old_loc) {
                 std::rotate(new_loc, old_loc, old_loc + 1);
+                old_loc = new_loc;
             } else {
-                std::rotate(old_loc, old_loc + 1, std::min(children.end(), new_loc + 1));
+                std::rotate(old_loc, old_loc + 1, new_loc);
+                old_loc = new_loc - 1;
             }
         }
+        old_loc->position = position;
 
         pc->position = position;
         PC new_val = *pc;
@@ -254,8 +261,10 @@ struct HierarchySystem {
 
             if (child_pos < before_pos) {
                 std::rotate(child_pos, child_pos + 1, before_pos);
+                child_pos = before_pos - 1;
             } else {
                 std::rotate(before_pos, child_pos, child_pos + 1);
+                child_pos = before_pos;
             }
         } else {
             // sibling not found or different parent; put at end
@@ -264,6 +273,7 @@ struct HierarchySystem {
             }
             new_pos = children.back().position.after();
             std::rotate(child_pos, child_pos + 1, children.end());
+            child_pos = children.end() - 1;
         }
 
         PC old_val = *pc;
